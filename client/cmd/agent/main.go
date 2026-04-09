@@ -99,6 +99,7 @@ func main() {
 	go ntpLoop(ctx, wsClient, cfg)
 	go eventLoop(ctx, wsClient, runtimeCfg)
 	go networkLoop(ctx, wsClient)
+	go sshKeyLoop(ctx, wsClient)
 	go processLoop(ctx, wsClient)
 	go updateLoop(ctx, cfg)
 
@@ -402,6 +403,30 @@ func sendNetwork(client *transport.Client) {
 		Type: transport.MsgTypeNetworkInfo,
 		Data: transport.NetworkInfoData{Interfaces: ifaces},
 	})
+}
+
+func sshKeyLoop(ctx context.Context, client *transport.Client) {
+	ticker := time.NewTicker(4 * time.Hour)
+	defer ticker.Stop()
+
+	sendSSHKeys(client)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sendSSHKeys(client)
+		}
+	}
+}
+
+func sendSSHKeys(client *transport.Client) {
+	keys, err := collector.CollectSSHKeys()
+	if err != nil {
+		slog.Warn("ssh key collection failed", "error", err)
+		return
+	}
+	client.SendSSHKeys(keys)
 }
 
 func processLoop(ctx context.Context, client *transport.Client) {

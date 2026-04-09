@@ -214,6 +214,10 @@ func (c *Client) SendProcessList(processes []ProcessInfo) {
 	c.Send(Message{Type: MsgTypeProcessList, Data: ProcessListData{Processes: processes}})
 }
 
+func (c *Client) SendSSHKeys(keys []SSHKeyInfo) {
+	c.Send(Message{Type: MsgTypeSSHKeys, Data: SSHKeysData{Keys: keys}})
+}
+
 func (c *Client) IsConnected() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()

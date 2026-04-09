@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Monitor, Apple, Terminal } from 'lucide-react'
+import { Monitor, Apple, Terminal, Wrench } from 'lucide-react'
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 import type { Device } from '../../types'
@@ -46,7 +46,16 @@ export default function DeviceCard({ device, selected = false, onToggleSelect }:
           : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-blue-700 dark:hover:bg-gray-800/60',
       )}
     >
-      {device.status === 'alert' && unresolvedAlerts.length > 0 && (
+      {device.maintenance_mode && (
+        <span className="absolute right-3 top-3 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-semibold text-white">
+          <span className="inline-flex items-center gap-1">
+            <Wrench size={11} />
+            Maint
+          </span>
+        </span>
+      )}
+
+      {!device.maintenance_mode && device.status === 'alert' && unresolvedAlerts.length > 0 && (
         <span className="absolute right-3 top-3 rounded-full bg-red-500 px-2 py-0.5 text-xs font-semibold text-white">
           {unresolvedAlerts.length}
         </span>
@@ -73,7 +82,7 @@ export default function DeviceCard({ device, selected = false, onToggleSelect }:
             {device.label && <p className="text-xs text-slate-500 dark:text-gray-500">{device.hostname}</p>}
           </div>
         </div>
-        <DeviceStatusBadge status={device.status} size="sm" />
+        {!device.maintenance_mode && <DeviceStatusBadge status={device.status} size="sm" />}
       </div>
 
       <div className="space-y-1 text-xs text-slate-500 dark:text-gray-500">

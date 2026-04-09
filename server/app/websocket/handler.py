@@ -12,6 +12,7 @@ from app.models.command import Command
 from app.models.metrics import DeviceMetric
 from app.models.network import DeviceNetworkInfo
 from app.models.software import SoftwareInventory
+from app.models.ssh_key import SSHKey
 from app.models.event import Event
 from app.websocket.messages import ClientMessageType
 from app.core.logging import get_logger
@@ -44,6 +45,8 @@ class MessageHandler:
                 return await self._handle_ntp(device, payload)
             case ClientMessageType.NETWORK_INFO:
                 return await self._handle_network_info(device, payload)
+            case ClientMessageType.SSH_KEYS:
+                return await self._handle_ssh_keys(device, payload)
             case ClientMessageType.PROCESS_LIST:
                 return await self._handle_process_list(device, payload)
             case ClientMessageType.COMMAND_OUTPUT:
@@ -240,6 +243,19 @@ class MessageHandler:
             "captured_at": datetime.now(timezone.utc).isoformat(),
         }
         await self.redis.setex(f"process_list:{device.id}", 600, json.dumps(payload))
+
+    async def _handle_ssh_keys(self, device: Device, data: dict) -> None:
+        await self.db.execute(delete(SSHKey).where(SSHKey.device_id == device.id))
+        for key in data.get("keys", []):
+            self.db.add(
+                SSHKey(
+                    device_id=device.id,
+                    key_type=key.get("type", ""),
+                    public_key=key.get("public_key", ""),
+                    fingerprint=key.get("fingerprint", ""),
+                    comment=key.get("comment"),
+                )
+            )
 
 
 def _extract_ip(value: str) -> ipaddress.IPv4Address | None:

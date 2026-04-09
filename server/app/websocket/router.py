@@ -9,6 +9,7 @@ from app.core.redis import get_redis
 from app.db.session import get_db
 from app.models.device_config import DeviceConfig
 from app.models.device import Device
+from app.models.uptime_event import UptimeEvent
 from app.core.security import verify_api_key
 from app.websocket.manager import manager
 from app.websocket.handler import MessageHandler
@@ -53,11 +54,23 @@ async def device_websocket(
     await manager.connect(device_id, websocket, ip=client_ip)
 
     # Update device status
+    now = datetime.now(timezone.utc)
     await db.execute(
         update(Device)
         .where(Device.id == device_id)
-        .values(status="online", last_seen=datetime.now(timezone.utc))
+        .values(status="online", last_seen=now)
     )
+    last_offline_result = await db.execute(
+        select(UptimeEvent)
+        .where(UptimeEvent.device_id == device_id, UptimeEvent.event_type == "offline")
+        .order_by(UptimeEvent.timestamp.desc())
+        .limit(1)
+    )
+    last_offline = last_offline_result.scalar_one_or_none()
+    duration_secs = None
+    if last_offline and last_offline.timestamp:
+        duration_secs = max(0, int((now - last_offline.timestamp).total_seconds()))
+    db.add(UptimeEvent(device_id=device_id, event_type="online", duration_secs=duration_secs))
     await db.commit()
 
     config_row = await db.get(DeviceConfig, device_id)

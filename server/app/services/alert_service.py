@@ -25,6 +25,10 @@ class AlertService:
         severity: str,
         message: str,
     ) -> Alert:
+        if device.maintenance_mode:
+            log.info("alert_skipped_maintenance", device_id=str(device.id), type=alert_type)
+            return Alert(device_id=device.id, alert_type=alert_type, severity=severity, message=message)
+
         # Check if an identical unresolved alert already exists
         result = await self.db.execute(
             select(Alert).where(

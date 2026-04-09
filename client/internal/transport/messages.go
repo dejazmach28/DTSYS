@@ -9,6 +9,7 @@ const (
 	MsgTypeEventReport       = "event_report"
 	MsgTypeNTPStatus         = "ntp_status"
 	MsgTypeNetworkInfo       = "network_info"
+	MsgTypeSSHKeys           = "ssh_keys"
 	MsgTypeProcessList       = "process_list"
 	MsgTypeCommandOutput     = "command_output"
 	MsgTypeCommandResult     = "command_result"
@@ -78,6 +79,17 @@ type NetworkInterface struct {
 
 type NetworkInfoData struct {
 	Interfaces []NetworkInterface `json:"interfaces"`
+}
+
+type SSHKeyInfo struct {
+	Type        string `json:"type"`
+	PublicKey   string `json:"public_key"`
+	Comment     string `json:"comment,omitempty"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+type SSHKeysData struct {
+	Keys []SSHKeyInfo `json:"keys"`
 }
 
 type ProcessInfo struct {

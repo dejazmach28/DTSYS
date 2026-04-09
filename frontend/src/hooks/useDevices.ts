@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { devicesApi } from '../api/devices'
+import type { Device } from '../types'
 
 export function useDevices(tag?: string) {
   return useQuery({
@@ -20,10 +21,11 @@ export function useDevice(id: string) {
 export function useUpdateDevice(id: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { label?: string; notes?: string; tags?: string[] }) => devicesApi.update(id, data),
+    mutationFn: (data: Partial<Device>) => devicesApi.update(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['device', id] })
       qc.invalidateQueries({ queryKey: ['devices'] })
+      qc.invalidateQueries({ queryKey: ['inventory'] })
       qc.invalidateQueries({ queryKey: ['tags'] })
     },
   })

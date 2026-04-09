@@ -1,6 +1,7 @@
 import json
 import re
 import uuid
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator
@@ -15,6 +16,8 @@ from app.models.device import Device
 from app.models.device_config import DeviceConfig
 from app.models.event import Event
 from app.models.network import DeviceNetworkInfo
+from app.models.ssh_key import SSHKey
+from app.models.uptime_event import UptimeEvent
 from app.models.user import User
 from app.dependencies import get_current_user, require_admin
 from app.services.audit_service import log_action
@@ -40,6 +43,14 @@ class UpdateDeviceRequest(BaseModel):
     label: str | None = Field(default=None, max_length=255)
     notes: str | None = Field(default=None, max_length=5000)
     tags: list[str] | None = None
+    serial_number: str | None = Field(default=None, max_length=100)
+    manufacturer: str | None = Field(default=None, max_length=100)
+    model_name: str | None = Field(default=None, max_length=100)
+    purchase_date: date | None = None
+    warranty_expires: date | None = None
+    location: str | None = Field(default=None, max_length=255)
+    assigned_to: str | None = Field(default=None, max_length=255)
+    asset_tag: str | None = Field(default=None, max_length=100)
 
     @field_validator("tags")
     @classmethod
@@ -50,6 +61,12 @@ class UpdateDeviceRequest(BaseModel):
             if not TAG_PATTERN.fullmatch(tag):
                 raise ValueError("tags must be alphanumeric and may include dash or underscore, up to 50 characters")
         return tags
+
+
+class MaintenanceRequest(BaseModel):
+    enabled: bool
+    until: datetime | None = None
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class DeviceConfigRequest(BaseModel):
@@ -119,6 +136,17 @@ async def list_devices(
             "label": d.label,
             "notes": d.notes,
             "tags": d.tags or [],
+            "serial_number": d.serial_number,
+            "manufacturer": d.manufacturer,
+            "model_name": d.model_name,
+            "purchase_date": d.purchase_date.isoformat() if d.purchase_date else None,
+            "warranty_expires": d.warranty_expires.isoformat() if d.warranty_expires else None,
+            "location": d.location,
+            "assigned_to": d.assigned_to,
+            "asset_tag": d.asset_tag,
+            "maintenance_mode": d.maintenance_mode,
+            "maintenance_until": d.maintenance_until.isoformat() if d.maintenance_until else None,
+            "maintenance_reason": d.maintenance_reason,
             "is_online": manager.is_connected(d.id),
         }
         for d in devices
@@ -167,6 +195,17 @@ async def get_device(
         "label": d.label,
         "notes": d.notes,
         "tags": d.tags or [],
+        "serial_number": d.serial_number,
+        "manufacturer": d.manufacturer,
+        "model_name": d.model_name,
+        "purchase_date": d.purchase_date.isoformat() if d.purchase_date else None,
+        "warranty_expires": d.warranty_expires.isoformat() if d.warranty_expires else None,
+        "location": d.location,
+        "assigned_to": d.assigned_to,
+        "asset_tag": d.asset_tag,
+        "maintenance_mode": d.maintenance_mode,
+        "maintenance_until": d.maintenance_until.isoformat() if d.maintenance_until else None,
+        "maintenance_reason": d.maintenance_reason,
         "is_online": manager.is_connected(d.id),
     }
 
@@ -212,14 +251,48 @@ async def update_device(
 ):
     service = DeviceService(db)
     device = await service.get_device(device_id)
-    if body.label is not None:
+    updates = body.model_dump(exclude_unset=True)
+    if "label" in updates:
         device.label = body.label
-    if body.notes is not None:
+    if "notes" in updates:
         device.notes = body.notes
-    if body.tags is not None:
-        device.tags = sorted(set(tag.strip() for tag in body.tags if tag.strip()))
+    if "tags" in updates:
+        device.tags = sorted(set(tag.strip() for tag in body.tags or [] if tag.strip()))
+    for field in (
+        "serial_number",
+        "manufacturer",
+        "model_name",
+        "purchase_date",
+        "warranty_expires",
+        "location",
+        "assigned_to",
+        "asset_tag",
+    ):
+        if field in updates:
+            setattr(device, field, getattr(body, field))
     await db.commit()
     return {"message": "Updated"}
+
+
+@router.post("/{device_id}/maintenance")
+async def set_device_maintenance(
+    device_id: uuid.UUID,
+    body: MaintenanceRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    service = DeviceService(db)
+    device = await service.get_device(device_id)
+    device.maintenance_mode = body.enabled
+    device.maintenance_until = body.until if body.enabled else None
+    device.maintenance_reason = body.reason if body.enabled else None
+    await db.commit()
+    return {
+        "device_id": str(device.id),
+        "maintenance_mode": device.maintenance_mode,
+        "maintenance_until": device.maintenance_until.isoformat() if device.maintenance_until else None,
+        "maintenance_reason": device.maintenance_reason,
+    }
 
 
 @router.get("/{device_id}/config")
@@ -356,6 +429,77 @@ async def get_device_processes(
     if payload is None:
         raise HTTPException(status_code=404, detail="Process list not found")
     return json.loads(payload)
+
+
+@router.get("/{device_id}/ssh-keys")
+async def get_device_ssh_keys(
+    device_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(
+        select(SSHKey).where(SSHKey.device_id == device_id).order_by(SSHKey.discovered_at.desc())
+    )
+    keys = result.scalars().all()
+    return [
+        {
+            "id": str(key.id),
+            "key_type": key.key_type,
+            "public_key": key.public_key,
+            "fingerprint": key.fingerprint,
+            "comment": key.comment,
+            "discovered_at": key.discovered_at.isoformat() if key.discovered_at else None,
+        }
+        for key in keys
+    ]
+
+
+@router.delete("/{device_id}/ssh-keys/{key_id}")
+async def delete_device_ssh_key(
+    device_id: uuid.UUID,
+    key_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    key = await db.get(SSHKey, key_id)
+    if key is None or key.device_id != device_id:
+        raise HTTPException(status_code=404, detail="SSH key not found")
+    await db.delete(key)
+    await db.commit()
+    return {"message": "SSH key removed from inventory"}
+
+
+@router.get("/{device_id}/uptime-history")
+async def get_uptime_history(
+    device_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    days: int = Query(30, ge=1, le=365),
+):
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    result = await db.execute(
+        select(UptimeEvent)
+        .where(UptimeEvent.device_id == device_id, UptimeEvent.timestamp >= since)
+        .order_by(UptimeEvent.timestamp.asc())
+    )
+    events = result.scalars().all()
+    total_period_secs = days * 24 * 60 * 60
+    total_downtime_secs = sum(event.duration_secs or 0 for event in events if event.event_type == "online")
+    uptime_percent = 100.0 if total_period_secs == 0 else max(0.0, 100.0 - (total_downtime_secs / total_period_secs * 100.0))
+    return {
+        "events": [
+            {
+                "id": str(event.id),
+                "event_type": event.event_type,
+                "timestamp": event.timestamp.isoformat() if event.timestamp else None,
+                "duration_secs": event.duration_secs,
+            }
+            for event in events
+        ],
+        "uptime_percent_30d": round(uptime_percent, 2),
+        "total_downtime_secs": total_downtime_secs,
+        "outage_count": sum(1 for event in events if event.event_type == "offline"),
+    }
 
 
 @router.get("/{device_id}/agent-logs")

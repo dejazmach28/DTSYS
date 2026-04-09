@@ -16,9 +16,10 @@ def check_offline_devices():
 async def _check_offline_devices_async():
     from sqlalchemy import select
     from app.db.session import AsyncSessionLocal
-    from app.models.device import Device
     from app.models.alert import Alert
     from app.config import get_settings
+    from app.models.device import Device
+    from app.models.uptime_event import UptimeEvent
 
     settings = get_settings()
     threshold = datetime.now(timezone.utc) - timedelta(seconds=settings.DEVICE_OFFLINE_THRESHOLD_SECONDS)
@@ -30,12 +31,14 @@ async def _check_offline_devices_async():
                 Device.status == "online",
                 Device.last_seen < threshold,
                 ~Device.is_revoked,
+                ~Device.maintenance_mode,
             )
         )
         stale_devices = result.scalars().all()
 
         for device in stale_devices:
             device.status = "offline"
+            db.add(UptimeEvent(device_id=device.id, event_type="offline"))
             # Check if offline alert already exists
             existing = await db.execute(
                 select(Alert).where(

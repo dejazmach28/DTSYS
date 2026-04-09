@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Boolean, DateTime, Text, Uuid
+from sqlalchemy import String, Boolean, Date, DateTime, Text, Uuid
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -17,7 +17,10 @@ if TYPE_CHECKING:
     from app.models.event import Event
     from app.models.network import DeviceNetworkInfo
     from app.models.scheduled_command import ScheduledCommand
+    from app.models.saved_command import SavedCommand
     from app.models.software import SoftwareInventory
+    from app.models.ssh_key import SSHKey
+    from app.models.uptime_event import UptimeEvent
 
 
 class Device(Base):
@@ -38,6 +41,17 @@ class Device(Base):
     label: Mapped[str | None] = mapped_column(String(255))
     notes: Mapped[str | None] = mapped_column(Text)
     tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    serial_number: Mapped[str | None] = mapped_column(String(100))
+    manufacturer: Mapped[str | None] = mapped_column(String(100))
+    model_name: Mapped[str | None] = mapped_column(String(100))
+    purchase_date: Mapped[date | None] = mapped_column(Date)
+    warranty_expires: Mapped[date | None] = mapped_column(Date)
+    location: Mapped[str | None] = mapped_column(String(255))
+    assigned_to: Mapped[str | None] = mapped_column(String(255))
+    asset_tag: Mapped[str | None] = mapped_column(String(100))
+    maintenance_mode: Mapped[bool] = mapped_column(Boolean, default=False)
+    maintenance_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    maintenance_reason: Mapped[str | None] = mapped_column(String(500))
 
     software: Mapped[list[SoftwareInventory]] = relationship(back_populates="device", lazy="select")
     events: Mapped[list[Event]] = relationship(back_populates="device", lazy="select")
@@ -46,3 +60,6 @@ class Device(Base):
     network_interfaces: Mapped[list[DeviceNetworkInfo]] = relationship(back_populates="device", lazy="select")
     config: Mapped[DeviceConfig | None] = relationship(back_populates="device", lazy="select", uselist=False)
     scheduled_commands: Mapped[list[ScheduledCommand]] = relationship(back_populates="device", lazy="select")
+    saved_commands: Mapped[list[SavedCommand]] = relationship(back_populates="device", lazy="select")
+    ssh_keys: Mapped[list[SSHKey]] = relationship(back_populates="device", lazy="select")
+    uptime_events: Mapped[list[UptimeEvent]] = relationship(back_populates="device", lazy="select")

@@ -1,19 +1,23 @@
 import { useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { LayoutDashboard, Bell, Settings, Shield, BarChart2, Clock3, PackageOpen, Plus, Network } from 'lucide-react'
+import { LayoutDashboard, Bell, Settings, Shield, BarChart2, Clock3, PackageOpen, Plus, Network, BookOpen, Package, Users, Monitor } from 'lucide-react'
 import { useAlerts } from '../../hooks/useAlerts'
 import { clsx } from 'clsx'
 import { groupsApi } from '../../api/groups'
 import { useAuthStore } from '../../store/authStore'
 
 const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/my-dashboard', icon: LayoutDashboard, label: 'My Dashboard' },
+  { to: '/', icon: Monitor, label: 'Devices' },
   { to: '/alerts', icon: Bell, label: 'Alerts' },
   { to: '/reports', icon: BarChart2, label: 'Reports' },
   { to: '/network-map', icon: Network, label: 'Network Map' },
+  { to: '/inventory', icon: Package, label: 'Inventory' },
+  { to: '/command-library', icon: BookOpen, label: 'Command Library' },
   { to: '/software-updates', icon: PackageOpen, label: 'Software Updates' },
   { to: '/scheduled', icon: Clock3, label: 'Scheduled' },
+  { to: '/users', icon: Users, label: 'Users', adminOnly: true },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
@@ -52,7 +56,7 @@ export default function Sidebar({
       </div>
 
       <nav className="flex-1 p-2 space-y-1">
-        {navItems.map(({ to, icon: Icon, label }) => (
+        {navItems.filter((item) => !item.adminOnly || role === 'admin').map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}

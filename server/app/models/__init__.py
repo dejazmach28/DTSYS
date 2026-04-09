@@ -9,6 +9,9 @@ from app.models.command import Command
 from app.models.alert import Alert
 from app.models.network import DeviceNetworkInfo
 from app.models.scheduled_command import ScheduledCommand
+from app.models.saved_command import SavedCommand
+from app.models.ssh_key import SSHKey
+from app.models.uptime_event import UptimeEvent
 from app.models.notification_rule import NotificationRule
 from app.models.user import User
 
@@ -25,6 +28,9 @@ __all__ = [
     "AuditLog",
     "DeviceNetworkInfo",
     "ScheduledCommand",
+    "SavedCommand",
+    "SSHKey",
+    "UptimeEvent",
     "NotificationRule",
     "User",
 ]

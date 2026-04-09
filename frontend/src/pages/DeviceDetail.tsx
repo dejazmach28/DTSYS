@@ -16,6 +16,7 @@ import {
   Network,
   Plus,
   Thermometer,
+  Wrench,
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { devicesApi } from '../api/devices'
@@ -59,6 +60,10 @@ export default function DeviceDetail() {
   const [configForm, setConfigForm] = useState(DEFAULT_DEVICE_CONFIG)
   const [isCapturing, setIsCapturing] = useState(false)
   const [captureStartedAt, setCaptureStartedAt] = useState<number | null>(null)
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false)
+  const [maintenanceForm, setMaintenanceForm] = useState({ enabled: false, reason: '', until: '' })
+  const [editingField, setEditingField] = useState<string | null>(null)
+  const [fieldDraft, setFieldDraft] = useState('')
   const [openSections, setOpenSections] = useState<Record<Tab, boolean>>({
     overview: true,
     software: false,
@@ -94,6 +99,16 @@ export default function DeviceDetail() {
     retry: false,
     refetchInterval: isCapturing ? 3000 : false,
   })
+  const { data: uptimeHistory } = useQuery({
+    queryKey: ['device-uptime-history', id],
+    queryFn: () => devicesApi.uptimeHistory(id!),
+    enabled: Boolean(id),
+  })
+  const { data: sshKeys = [] } = useQuery({
+    queryKey: ['device-ssh-keys', id],
+    queryFn: () => devicesApi.sshKeys(id!),
+    enabled: Boolean(id),
+  })
 
   const saveConfig = useMutation({
     mutationFn: () => devicesApi.updateConfig(id!, configForm),
@@ -117,12 +132,37 @@ export default function DeviceDetail() {
       queryClient.invalidateQueries({ queryKey: ['device-screenshot', id] })
     },
   })
+  const updateMaintenance = useMutation({
+    mutationFn: () =>
+      devicesApi.maintenance(id!, {
+        enabled: maintenanceForm.enabled,
+        reason: maintenanceForm.reason || null,
+        until: maintenanceForm.until || null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['device', id] })
+      queryClient.invalidateQueries({ queryKey: ['devices'] })
+      setMaintenanceOpen(false)
+    },
+  })
+  const removeSSHKey = useMutation({
+    mutationFn: (keyId: string) => devicesApi.deleteSSHKey(id!, keyId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['device-ssh-keys', id] }),
+  })
 
   useEffect(() => {
     if (configData?.config) {
       setConfigForm(configData.config)
     }
   }, [configData])
+
+  useEffect(() => {
+    setMaintenanceForm({
+      enabled: Boolean(device?.maintenance_mode),
+      reason: device?.maintenance_reason ?? '',
+      until: device?.maintenance_until ? device.maintenance_until.slice(0, 16) : '',
+    })
+  }, [device?.maintenance_mode, device?.maintenance_reason, device?.maintenance_until])
 
   useEffect(() => {
     if (!isCapturing || !screenshotData?.captured_at) {
@@ -210,6 +250,30 @@ export default function DeviceDetail() {
         <MetricsChart metrics={metrics} />
       </div>
 
+      <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-medium text-slate-700 dark:text-gray-300">Uptime History (30d)</h3>
+            <p className="text-xs text-slate-500 dark:text-gray-500">Recent outages and downtime trends.</p>
+          </div>
+          <div className={`text-2xl font-bold ${uptimeTone(uptimeHistory?.uptime_percent_30d ?? 100)}`}>
+            {(uptimeHistory?.uptime_percent_30d ?? 100).toFixed(1)}% uptime
+          </div>
+        </div>
+        <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(30, minmax(0, 1fr))' }}>
+          {buildUptimeSegments(uptimeHistory?.events ?? []).map((segment) => (
+            <div
+              key={segment.date}
+              title={`${segment.date}: ${segment.label}`}
+              className={`h-8 rounded-md ${segment.tone}`}
+            />
+          ))}
+        </div>
+        <p className="mt-3 text-sm text-slate-600 dark:text-gray-300">
+          {(uptimeHistory?.outage_count ?? 0)} outages in last 30 days · Total downtime: {formatUptime(uptimeHistory?.total_downtime_secs ?? 0)}
+        </p>
+      </div>
+
       <div className="rounded-xl border border-slate-800 bg-slate-900 p-4 text-white shadow-lg">
         <h3 className="mb-4 text-sm font-medium text-slate-200">System Info</h3>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -218,6 +282,66 @@ export default function DeviceDetail() {
           <InfoRow label="Hostname" value={device.hostname} />
           <InfoRow label="IP Address" value={device.ip_address ?? '—'} />
           <InfoRow label="Enrolled" value={format(new Date(device.enrolled_at), 'PPpp')} />
+          <EditableInfoRow
+            label="Serial Number"
+            field="serial_number"
+            value={device.serial_number ?? ''}
+            editingField={editingField}
+            draft={fieldDraft}
+            setEditingField={setEditingField}
+            setDraft={setFieldDraft}
+            onSave={(value) => updateDevice.mutateAsync({ serial_number: value || null })}
+          />
+          <EditableInfoRow
+            label="Manufacturer"
+            field="manufacturer"
+            value={device.manufacturer ?? ''}
+            editingField={editingField}
+            draft={fieldDraft}
+            setEditingField={setEditingField}
+            setDraft={setFieldDraft}
+            onSave={(value) => updateDevice.mutateAsync({ manufacturer: value || null })}
+          />
+          <EditableInfoRow
+            label="Model"
+            field="model_name"
+            value={device.model_name ?? ''}
+            editingField={editingField}
+            draft={fieldDraft}
+            setEditingField={setEditingField}
+            setDraft={setFieldDraft}
+            onSave={(value) => updateDevice.mutateAsync({ model_name: value || null })}
+          />
+          <EditableInfoRow
+            label="Location"
+            field="location"
+            value={device.location ?? ''}
+            editingField={editingField}
+            draft={fieldDraft}
+            setEditingField={setEditingField}
+            setDraft={setFieldDraft}
+            onSave={(value) => updateDevice.mutateAsync({ location: value || null })}
+          />
+          <EditableInfoRow
+            label="Assigned To"
+            field="assigned_to"
+            value={device.assigned_to ?? ''}
+            editingField={editingField}
+            draft={fieldDraft}
+            setEditingField={setEditingField}
+            setDraft={setFieldDraft}
+            onSave={(value) => updateDevice.mutateAsync({ assigned_to: value || null })}
+          />
+          <EditableInfoRow
+            label="Asset Tag"
+            field="asset_tag"
+            value={device.asset_tag ?? ''}
+            editingField={editingField}
+            draft={fieldDraft}
+            setEditingField={setEditingField}
+            setDraft={setFieldDraft}
+            onSave={(value) => updateDevice.mutateAsync({ asset_tag: value || null })}
+          />
           <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-3">
             <p className="text-xs uppercase tracking-wide text-slate-400">Device ID</p>
             <div className="mt-2 flex items-center gap-2">
@@ -374,12 +498,51 @@ export default function DeviceDetail() {
       </div>
     ),
     network: (
-      <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-        <div className="mb-3 flex items-center gap-2">
-          <Network size={16} className="text-slate-500 dark:text-gray-500" />
-          <h3 className="text-sm font-medium text-slate-700 dark:text-gray-300">Network Interfaces</h3>
+      <div className="space-y-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+          <div className="mb-3 flex items-center gap-2">
+            <Network size={16} className="text-slate-500 dark:text-gray-500" />
+            <h3 className="text-sm font-medium text-slate-700 dark:text-gray-300">Network Interfaces</h3>
+          </div>
+          <NetworkInfo deviceId={id!} />
         </div>
-        <NetworkInfo deviceId={id!} />
+        <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+          <div className="mb-3">
+            <h3 className="text-sm font-medium text-slate-700 dark:text-gray-300">SSH Keys</h3>
+            <p className="text-xs text-slate-500 dark:text-gray-500">Removing a key here does not remove it from the device.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="text-left text-slate-500 dark:text-gray-500">
+                <tr>
+                  <th className="px-2 py-2">Type</th>
+                  <th className="px-2 py-2">Fingerprint</th>
+                  <th className="px-2 py-2">Comment</th>
+                  <th className="px-2 py-2">Discovered</th>
+                  <th className="px-2 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {sshKeys.map((key) => (
+                  <tr key={key.id} className="border-t border-slate-200 dark:border-gray-800">
+                    <td className="px-2 py-2 text-slate-900 dark:text-gray-100">{key.key_type}</td>
+                    <td className="px-2 py-2 font-mono text-xs text-slate-600 dark:text-gray-300">{key.fingerprint}</td>
+                    <td className="px-2 py-2 text-slate-600 dark:text-gray-300">{key.comment ?? '—'}</td>
+                    <td className="px-2 py-2 text-slate-600 dark:text-gray-300">{key.discovered_at ? formatDistanceToNow(new Date(key.discovered_at), { addSuffix: true }) : '—'}</td>
+                    <td className="px-2 py-2 text-right">
+                      <button onClick={() => removeSSHKey.mutate(key.id)} className="rounded-lg border border-red-200 px-3 py-1 text-xs text-red-600 dark:border-red-500/30 dark:text-red-300">Remove from inventory</button>
+                    </td>
+                  </tr>
+                ))}
+                {sshKeys.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-2 py-4 text-center text-slate-500 dark:text-gray-500">No SSH keys reported yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     ),
     processes: (
@@ -428,6 +591,13 @@ export default function DeviceDetail() {
 
   return (
     <div className="space-y-5">
+      {device.maintenance_mode && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-300">
+          🔧 Maintenance mode active
+          {device.maintenance_reason ? ` · ${device.maintenance_reason}` : ''}
+          {device.maintenance_until ? ` · until ${format(new Date(device.maintenance_until), 'PPpp')}` : ''}
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate(-1)}
@@ -445,6 +615,13 @@ export default function DeviceDetail() {
             {device.last_seen && ` · Last seen ${formatDistanceToNow(new Date(device.last_seen), { addSuffix: true })}`}
           </p>
         </div>
+        <button
+          onClick={() => setMaintenanceOpen(true)}
+          className="inline-flex items-center gap-2 rounded-lg border border-amber-400/40 px-3 py-2 text-sm text-amber-600 dark:text-amber-300"
+        >
+          <Wrench size={14} />
+          Maintenance
+        </button>
       </div>
 
       {isMobile ? (
@@ -483,6 +660,42 @@ export default function DeviceDetail() {
           {contentByTab[tab]}
         </>
       )}
+
+      {maintenanceOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-gray-100">Maintenance Mode</h2>
+              <button onClick={() => setMaintenanceOpen(false)} className="text-sm text-slate-500 dark:text-gray-400">Close</button>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={maintenanceForm.enabled}
+                onChange={(event) => setMaintenanceForm((current) => ({ ...current, enabled: event.target.checked }))}
+              />
+              Enable maintenance mode
+            </label>
+            <textarea
+              value={maintenanceForm.reason}
+              onChange={(event) => setMaintenanceForm((current) => ({ ...current, reason: event.target.value }))}
+              placeholder="Reason"
+              rows={3}
+              className="mt-3 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
+            />
+            <input
+              type="datetime-local"
+              value={maintenanceForm.until}
+              onChange={(event) => setMaintenanceForm((current) => ({ ...current, until: event.target.value }))}
+              className="mt-3 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setMaintenanceOpen(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-gray-700">Cancel</button>
+              <button onClick={() => updateMaintenance.mutate()} className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -492,6 +705,62 @@ function InfoRow({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-3">
       <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
       <p className="mt-1 text-sm text-slate-100">{value}</p>
+    </div>
+  )
+}
+
+function EditableInfoRow({
+  label,
+  field,
+  value,
+  editingField,
+  draft,
+  setEditingField,
+  setDraft,
+  onSave,
+}: {
+  label: string
+  field: string
+  value: string
+  editingField: string | null
+  draft: string
+  setEditingField: (field: string | null) => void
+  setDraft: (value: string) => void
+  onSave: (value: string) => Promise<unknown>
+}) {
+  const active = editingField === field
+
+  return (
+    <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-3">
+      <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
+      {active ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={async () => {
+            await onSave(draft)
+            setEditingField(null)
+          }}
+          onKeyDown={async (event) => {
+            if (event.key === 'Enter') {
+              await onSave(draft)
+              setEditingField(null)
+            }
+          }}
+          className="mt-1 w-full rounded bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none"
+        />
+      ) : (
+        <button
+          onClick={() => {
+            setEditingField(field)
+            setDraft(value)
+          }}
+          className="mt-1 text-left text-sm text-slate-100"
+        >
+          {value || '—'}
+        </button>
+      )}
     </div>
   )
 }
@@ -532,4 +801,36 @@ function useIsMobile() {
   }, [])
 
   return isMobile
+}
+
+function uptimeTone(value: number) {
+  if (value >= 99) return 'text-emerald-500'
+  if (value >= 95) return 'text-amber-500'
+  return 'text-red-500'
+}
+
+function buildUptimeSegments(events: Array<{ event_type: string; timestamp: string; duration_secs: number | null }>) {
+  const days = Array.from({ length: 30 }, (_, index) => {
+    const date = new Date()
+    date.setDate(date.getDate() - (29 - index))
+    return { key: date.toISOString().slice(0, 10), downtime: 0 }
+  })
+  const map = new Map(days.map((entry) => [entry.key, entry]))
+  for (const event of events) {
+    const key = event.timestamp.slice(0, 10)
+    const target = map.get(key)
+    if (!target) continue
+    if (event.event_type === 'online') {
+      target.downtime += event.duration_secs ?? 0
+    }
+  }
+  return days.map((entry) => {
+    const uptime = Math.max(0, 86400 - entry.downtime)
+    const uptimePercent = uptime / 86400
+    return {
+      date: entry.key,
+      label: `${Math.round(uptimePercent * 100)}% uptime`,
+      tone: uptimePercent >= 0.999 ? 'bg-emerald-500' : uptimePercent > 0 ? 'bg-amber-500' : 'bg-slate-300 dark:bg-gray-700',
+    }
+  })
 }

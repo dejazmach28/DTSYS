@@ -11,6 +11,17 @@ export interface Device {
   label: string | null
   notes: string | null
   tags: string[]
+  serial_number?: string | null
+  manufacturer?: string | null
+  model_name?: string | null
+  purchase_date?: string | null
+  warranty_expires?: string | null
+  location?: string | null
+  assigned_to?: string | null
+  asset_tag?: string | null
+  maintenance_mode?: boolean
+  maintenance_until?: string | null
+  maintenance_reason?: string | null
   is_online: boolean
 }
 
@@ -234,6 +245,62 @@ export interface User {
   id: string
   username: string
   role: 'admin' | 'viewer'
+  is_active?: boolean
+  last_login?: string | null
+  created_at?: string | null
+}
+
+export interface UptimeHistoryEvent {
+  id: string
+  event_type: 'online' | 'offline'
+  timestamp: string
+  duration_secs: number | null
+}
+
+export interface UptimeHistoryResponse {
+  events: UptimeHistoryEvent[]
+  uptime_percent_30d: number
+  total_downtime_secs: number
+  outage_count: number
+}
+
+export interface SavedCommand {
+  id: string
+  name: string
+  description: string | null
+  command_type: string
+  payload: Record<string, unknown>
+  is_global: boolean
+  created_by: string | null
+  device_id: string | null
+  created_at: string | null
+}
+
+export interface InventoryDevice {
+  id: string
+  hostname: string
+  label: string | null
+  os_type: string
+  os_version: string | null
+  ip_address: string | null
+  serial_number: string | null
+  manufacturer: string | null
+  model_name: string | null
+  purchase_date: string | null
+  warranty_expires: string | null
+  location: string | null
+  assigned_to: string | null
+  asset_tag: string | null
+  status: string
+}
+
+export interface SSHKeyInfo {
+  id: string
+  key_type: string
+  public_key: string
+  fingerprint: string
+  comment: string | null
+  discovered_at: string | null
 }
 
 export interface AuthTokens {

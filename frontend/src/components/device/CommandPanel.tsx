@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Clock3, Play, RefreshCw, RotateCcw, Stethoscope, Terminal } from 'lucide-react'
+import { BookOpen, Clock3, Play, RefreshCw, RotateCcw, Stethoscope, Terminal, X } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { commandsApi } from '../../api/commands'
+import { savedCommandsApi } from '../../api/savedCommands'
 import type { Command } from '../../types'
 
 interface Props {
@@ -21,12 +22,20 @@ const statusColor: Record<Command['status'], string> = {
 export default function CommandPanel({ deviceId }: Props) {
   const [commandText, setCommandText] = useState('')
   const [selectedCmd, setSelectedCmd] = useState<Command | null>(null)
+  const [libraryOpen, setLibraryOpen] = useState(false)
+  const [savedCommandName, setSavedCommandName] = useState('')
+  const [savedCommandDescription, setSavedCommandDescription] = useState('')
+  const [search, setSearch] = useState('')
   const qc = useQueryClient()
 
   const { data: commands = [] } = useQuery({
     queryKey: ['commands', deviceId],
     queryFn: () => commandsApi.list(deviceId),
     refetchInterval: 5000,
+  })
+  const { data: savedCommands = [] } = useQuery({
+    queryKey: ['saved-commands', 'panel'],
+    queryFn: savedCommandsApi.list,
   })
 
   useEffect(() => {
@@ -45,6 +54,22 @@ export default function CommandPanel({ deviceId }: Props) {
     onSuccess: () => {
       setCommandText('')
       qc.invalidateQueries({ queryKey: ['commands', deviceId] })
+    },
+  })
+  const saveCurrentCommand = useMutation({
+    mutationFn: () =>
+      savedCommandsApi.create({
+        name: savedCommandName,
+        description: savedCommandDescription || null,
+        command_type: 'shell',
+        payload: { command: commandText },
+        is_global: false,
+        device_id: null,
+      }),
+    onSuccess: () => {
+      setSavedCommandName('')
+      setSavedCommandDescription('')
+      qc.invalidateQueries({ queryKey: ['saved-commands'] })
     },
   })
 
@@ -76,6 +101,15 @@ export default function CommandPanel({ deviceId }: Props) {
           <span className="inline-flex items-center gap-2">
             <Play size={15} />
             Send
+          </span>
+        </button>
+        <button
+          onClick={() => setLibraryOpen(true)}
+          className="min-h-11 rounded-lg border border-slate-200 px-4 text-slate-700 transition-colors hover:border-blue-500 dark:border-gray-700 dark:text-gray-300"
+        >
+          <span className="inline-flex items-center gap-2">
+            <BookOpen size={15} />
+            Library
           </span>
         </button>
       </div>
@@ -129,6 +163,82 @@ export default function CommandPanel({ deviceId }: Props) {
           </div>
         ))}
       </div>
+
+      {libraryOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900 dark:text-gray-100">Command Library</h3>
+                <p className="mt-1 text-sm text-slate-500 dark:text-gray-500">Reuse saved commands or save the current shell command.</p>
+              </div>
+              <button onClick={() => setLibraryOpen(false)} className="text-slate-500 dark:text-gray-400"><X size={18} /></button>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+              <div>
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search saved commands…"
+                  className="mb-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
+                />
+                <div className="max-h-80 space-y-2 overflow-y-auto">
+                  {savedCommands
+                    .filter((command) => command.name.toLowerCase().includes(search.toLowerCase()))
+                    .map((command) => (
+                      <div key={command.id} className="rounded-xl border border-slate-200 p-3 dark:border-gray-800">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-slate-900 dark:text-gray-100">{command.name}</p>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-gray-500">{command.description ?? 'No description'}</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (command.command_type === 'shell') {
+                                setCommandText(String(command.payload.command ?? ''))
+                              } else {
+                                dispatch.mutate({ command_type: command.command_type, payload: command.payload })
+                              }
+                              setLibraryOpen(false)
+                            }}
+                            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs text-white"
+                          >
+                            Run
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 p-4 dark:border-gray-800">
+                <h4 className="text-sm font-semibold text-slate-900 dark:text-gray-100">Save Current</h4>
+                <p className="mt-1 text-xs text-slate-500 dark:text-gray-500">Store the current shell command in your personal library.</p>
+                <input
+                  value={savedCommandName}
+                  onChange={(event) => setSavedCommandName(event.target.value)}
+                  placeholder="Name"
+                  className="mt-3 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+                />
+                <input
+                  value={savedCommandDescription}
+                  onChange={(event) => setSavedCommandDescription(event.target.value)}
+                  placeholder="Description"
+                  className="mt-2 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+                />
+                <button
+                  onClick={() => saveCurrentCommand.mutate()}
+                  disabled={!commandText.trim() || !savedCommandName.trim()}
+                  className="mt-3 w-full rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50"
+                >
+                  Save Current
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

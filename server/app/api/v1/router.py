@@ -19,7 +19,9 @@ from app.api.v1 import (
     software_updates,
     software,
     groups,
+    inventory,
     tags,
+    saved_commands,
 )
 
 router = APIRouter(prefix="/api/v1")
@@ -39,6 +41,8 @@ router.include_router(agent.router)
 router.include_router(downloads.router)
 router.include_router(tags.router)
 router.include_router(groups.router)
+router.include_router(inventory.router)
+router.include_router(saved_commands.router)
 router.include_router(scheduled_commands.router)
 router.include_router(notification_rules.router)
 router.include_router(software_catalog.router)

@@ -15,6 +15,10 @@ import Onboarding from './pages/Onboarding'
 import DeviceCompare from './pages/DeviceCompare'
 import NetworkMap from './pages/NetworkMap'
 import Status from './pages/Status'
+import Users from './pages/Users'
+import Inventory from './pages/Inventory'
+import CommandLibrary from './pages/CommandLibrary'
+import CustomDashboard from './pages/CustomDashboard'
 import { devicesApi } from './api/devices'
 import { useAuthStore } from './store/authStore'
 
@@ -87,13 +91,17 @@ export default function App() {
             }
           >
             <Route index element={withBoundary(<HomeRoute />)} />
+            <Route path="my-dashboard" element={withBoundary(<CustomDashboard />)} />
             <Route path="devices/:id" element={withBoundary(<DeviceDetail />)} />
             <Route path="compare" element={withBoundary(<DeviceCompare />)} />
             <Route path="network-map" element={withBoundary(<NetworkMap />)} />
             <Route path="alerts" element={withBoundary(<Alerts />)} />
             <Route path="reports" element={withBoundary(<Reports />)} />
+            <Route path="inventory" element={withBoundary(<Inventory />)} />
+            <Route path="command-library" element={withBoundary(<CommandLibrary />)} />
             <Route path="software-updates" element={withBoundary(<SoftwareUpdates />)} />
             <Route path="scheduled" element={withBoundary(<ScheduledCommands />)} />
+            <Route path="users" element={withBoundary(<Users />)} />
             <Route path="settings" element={withBoundary(<Settings />)} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
