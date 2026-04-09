@@ -3,7 +3,8 @@ import { AlertTriangle, CheckCircle } from 'lucide-react'
 import { useAlerts, useResolveAlert } from '../hooks/useAlerts'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
+import { useDevices } from '../hooks/useDevices'
 
 const severityConfig = {
   critical: { badge: 'bg-red-500/15 text-red-400 border-red-500/30', dot: 'bg-red-500' },
@@ -14,16 +15,24 @@ const severityConfig = {
 export default function Alerts() {
   const [showResolved, setShowResolved] = useState(false)
   const { data: alerts = [] } = useAlerts({ resolved: showResolved ? undefined : false })
+  const { data: devices = [] } = useDevices()
   const resolve = useResolveAlert()
-  const navigate = useNavigate()
 
-  const grouped = alerts.reduce(
-    (acc, a) => {
-      const key = a.severity as keyof typeof severityConfig
-      acc[key] = (acc[key] ?? []).concat(a)
+  const deviceNames = Object.fromEntries(
+    devices.map((device) => [device.id, device.label ?? device.hostname])
+  )
+
+  const groupedByDevice = alerts.reduce<Record<string, typeof alerts>>((acc, alert) => {
+    acc[alert.device_id] = [...(acc[alert.device_id] ?? []), alert]
+    return acc
+  }, {})
+
+  const summary = alerts.reduce(
+    (acc, alert) => {
+      acc[alert.severity] += 1
       return acc
     },
-    {} as Record<string, typeof alerts>
+    { critical: 0, warning: 0, info: 0 }
   )
 
   return (
@@ -44,58 +53,81 @@ export default function Alerts() {
         </label>
       </div>
 
+      <div className="flex flex-wrap gap-3 rounded-xl border border-gray-800 bg-gray-900 px-4 py-3 text-sm">
+        <span className="font-medium text-red-400">{summary.critical} critical</span>
+        <span className="font-medium text-amber-400">{summary.warning} warnings</span>
+        <span className="font-medium text-blue-400">{summary.info} info</span>
+      </div>
+
       {alerts.length === 0 ? (
         <div className="text-center py-16 text-gray-600">
           <AlertTriangle size={40} className="mx-auto mb-3 opacity-30" />
           <p>No alerts</p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {alerts.map((alert) => {
-            const cfg = severityConfig[alert.severity] ?? severityConfig.info
-            return (
-              <div
-                key={alert.id}
-                className={clsx(
-                  'bg-gray-900 border rounded-xl px-4 py-3 flex items-start gap-3',
-                  alert.is_resolved ? 'border-gray-800 opacity-50' : 'border-gray-700'
-                )}
-              >
-                <span className={clsx('w-2 h-2 rounded-full shrink-0 mt-1.5', cfg.dot)} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span
-                      className={clsx('text-xs px-1.5 py-0.5 rounded border font-medium', cfg.badge)}
-                    >
-                      {alert.severity}
-                    </span>
-                    <span className="text-xs text-gray-500 bg-gray-800 px-1.5 py-0.5 rounded">
-                      {alert.alert_type.replace(/_/g, ' ')}
-                    </span>
-                    <button
-                      onClick={() => navigate(`/devices/${alert.device_id}`)}
-                      className="text-xs text-blue-400 hover:underline"
-                    >
-                      View device
-                    </button>
-                    <span className="text-xs text-gray-600 ml-auto">
-                      {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-300 mt-1">{alert.message}</p>
-                </div>
-                {!alert.is_resolved && (
-                  <button
-                    onClick={() => resolve.mutate(alert.id)}
-                    className="shrink-0 text-gray-600 hover:text-green-400 transition-colors"
-                    title="Resolve"
-                  >
-                    <CheckCircle size={16} />
-                  </button>
-                )}
+        <div className="space-y-5">
+          {Object.entries(groupedByDevice).map(([deviceId, deviceAlerts]) => (
+            <section key={deviceId} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Link to={`/devices/${deviceId}`} className="text-sm font-semibold text-gray-100 hover:text-blue-400">
+                  {deviceNames[deviceId] ?? deviceId}
+                </Link>
+                <button
+                  onClick={() =>
+                    Promise.all(
+                      deviceAlerts
+                        .filter((alert) => !alert.is_resolved)
+                        .map((alert) => resolve.mutateAsync(alert.id))
+                    )
+                  }
+                  disabled={deviceAlerts.every((alert) => alert.is_resolved) || resolve.isPending}
+                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-green-500 hover:text-white disabled:opacity-50"
+                >
+                  Resolve All
+                </button>
               </div>
-            )
-          })}
+
+              {deviceAlerts.map((alert) => {
+                const cfg = severityConfig[alert.severity] ?? severityConfig.info
+                return (
+                  <div
+                    key={alert.id}
+                    className={clsx(
+                      'bg-gray-900 border rounded-xl px-4 py-3 flex items-start gap-3',
+                      alert.is_resolved ? 'border-gray-800 opacity-50' : 'border-gray-700'
+                    )}
+                  >
+                    <span className={clsx('w-2 h-2 rounded-full shrink-0 mt-1.5', cfg.dot)} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={clsx('text-xs px-1.5 py-0.5 rounded border font-medium', cfg.badge)}
+                        >
+                          {alert.severity}
+                        </span>
+                        <span className="text-xs text-gray-500 bg-gray-800 px-1.5 py-0.5 rounded">
+                          {alert.alert_type.replace(/_/g, ' ')}
+                        </span>
+                        <span className="ml-auto text-xs text-gray-600">
+                          {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-gray-300">{alert.message}</p>
+                    </div>
+                    {!alert.is_resolved && (
+                      <button
+                        onClick={() => resolve.mutate(alert.id)}
+                        className="shrink-0 text-gray-600 hover:text-green-400 transition-colors"
+                        title="Resolve"
+                      >
+                        <CheckCircle size={16} />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </section>
+          ))}
         </div>
       )}
     </div>

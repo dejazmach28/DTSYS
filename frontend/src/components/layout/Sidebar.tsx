@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Monitor, Bell, Terminal, Settings, Shield } from 'lucide-react'
+import { LayoutDashboard, Bell, Settings, Shield } from 'lucide-react'
 import { useAlerts } from '../../hooks/useAlerts'
 import { clsx } from 'clsx'
 

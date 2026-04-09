@@ -1,10 +1,12 @@
 import uuid
 from typing import Annotated
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.core.redis import get_redis
 from app.db.session import get_db
 from app.models.network import DeviceNetworkInfo
 from app.models.user import User
@@ -29,8 +31,12 @@ class RegisterRequest(BaseModel):
 async def register_device(
     body: RegisterRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ):
-    # TODO: validate enrollment_token against Redis store
+    token_key = f"enrollment:{body.enrollment_token}"
+    if await redis.get(token_key) is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired enrollment token")
+
     service = DeviceService(db)
     device, raw_key = await service.register_device(
         hostname=body.hostname,
@@ -41,6 +47,7 @@ async def register_device(
         ip_address=body.ip_address,
     )
     await db.commit()
+    await redis.delete(token_key)
     return {
         "device_id": str(device.id),
         "api_key": raw_key,

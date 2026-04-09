@@ -67,6 +67,21 @@ export interface Alert {
   resolved_at: string | null
 }
 
+export interface NetworkInterface {
+  id: string
+  interface_name: string
+  mac_address: string | null
+  ipv4: string[]
+  ipv6: string[]
+  is_up: boolean
+  mtu: number | null
+  updated_at: string | null
+}
+
+export interface DeviceNetworkResponse {
+  interfaces: NetworkInterface[]
+}
+
 export interface User {
   id: string
   username: string

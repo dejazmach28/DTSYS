@@ -1,8 +1,10 @@
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { Monitor, Apple, Terminal } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import type { Device } from '../../types'
 import DeviceStatusBadge from './DeviceStatusBadge'
+import { alertsApi } from '../../api/alerts'
 
 interface Props {
   device: Device
@@ -18,6 +20,12 @@ const OSIcon = ({ os }: { os: string }) => {
 
 export default function DeviceCard({ device, selected = false, onToggleSelect }: Props) {
   const navigate = useNavigate()
+  const { data: unresolvedAlerts = [] } = useQuery({
+    queryKey: ['alerts', 'device-card', device.id],
+    queryFn: () => alertsApi.list({ device_id: device.id, resolved: false }),
+    enabled: device.status === 'alert',
+    refetchInterval: 30_000,
+  })
 
   return (
     <div
@@ -27,7 +35,13 @@ export default function DeviceCard({ device, selected = false, onToggleSelect }:
           ? 'border-blue-600 bg-blue-950/20'
           : 'border-gray-800 bg-gray-900 hover:border-blue-700 hover:bg-gray-800/60'
       } cursor-pointer`}
-    >
+      >
+      {device.status === 'alert' && unresolvedAlerts.length > 0 && (
+        <span className="absolute right-3 top-3 rounded-full bg-red-500 px-2 py-0.5 text-xs font-semibold text-white">
+          {unresolvedAlerts.length}
+        </span>
+      )}
+
       {onToggleSelect && (
         <div className={`absolute left-3 top-3 transition-opacity ${selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
           <input
@@ -41,7 +55,7 @@ export default function DeviceCard({ device, selected = false, onToggleSelect }:
         </div>
       )}
 
-      <div className="flex items-start justify-between mb-3">
+      <div className="mb-3 flex items-start justify-between">
         <div className={`flex items-center gap-2 ${onToggleSelect ? 'pl-6' : ''}`}>
           <OSIcon os={device.os_type} />
           <div>

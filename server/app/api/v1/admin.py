@@ -2,8 +2,10 @@ import secrets
 from typing import Annotated
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.redis import get_redis
 from app.db.session import get_db
 from app.models.user import User
 from app.dependencies import require_admin
@@ -33,10 +35,10 @@ async def create_user(
 @router.post("/enrollment-tokens")
 async def generate_enrollment_token(
     current_user: Annotated[User, Depends(require_admin)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ):
-    """Generate a one-time enrollment token for device registration."""
-    # In production this would be stored in Redis with expiry
     token = secrets.token_urlsafe(24)
+    await redis.setex(f"enrollment:{token}", 3600, "valid")
     return {
         "enrollment_token": token,
         "expires_in_minutes": 60,
