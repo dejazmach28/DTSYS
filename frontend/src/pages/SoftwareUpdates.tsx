@@ -5,12 +5,14 @@ import { ChevronDown, ChevronRight, PackageOpen } from 'lucide-react'
 import { softwareUpdatesApi } from '../api/softwareUpdates'
 import { useDevices } from '../hooks/useDevices'
 import { exportToCSV } from '../utils/export'
+import Pagination from '../components/ui/Pagination'
 
 export default function SoftwareUpdates() {
   const [searchParams] = useSearchParams()
   const [selected, setSelected] = useState<string[]>([])
   const [expanded, setExpanded] = useState<string[]>([])
   const [search, setSearch] = useState(searchParams.get('search') ?? '')
+  const [page, setPage] = useState(1)
   const { data: pending = [] } = useQuery({
     queryKey: ['software-updates', 'pending'],
     queryFn: softwareUpdatesApi.pending,
@@ -30,6 +32,8 @@ export default function SoftwareUpdates() {
   const filtered = pending.filter((entry) =>
     entry.software_name.toLowerCase().includes(search.toLowerCase())
   )
+  const pageSize = 25
+  const paged = filtered.slice((page - 1) * pageSize, page * pageSize)
   const totalDevices = new Set(filtered.flatMap((entry) => entry.affected_device_ids)).size
 
   const toggleSelected = (name: string) => {
@@ -100,7 +104,7 @@ export default function SoftwareUpdates() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((entry) => {
+            {paged.map((entry) => {
               const isExpanded = expanded.includes(entry.software_name)
               return (
                 <Fragment key={entry.software_name}>
@@ -163,7 +167,7 @@ export default function SoftwareUpdates() {
                 </Fragment>
               )
             })}
-            {filtered.length === 0 && (
+            {paged.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-3 py-10 text-center text-slate-500 dark:text-gray-500">
                   <div className="flex flex-col items-center gap-2">
@@ -176,6 +180,7 @@ export default function SoftwareUpdates() {
           </tbody>
         </table>
       </div>
+      <Pagination page={page} totalPages={Math.max(1, Math.ceil(filtered.length / pageSize))} onChange={setPage} />
     </div>
   )
 }

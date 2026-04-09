@@ -30,6 +30,7 @@ import EventLog from '../components/device/EventLog'
 import CommandPanel from '../components/device/CommandPanel'
 import NetworkInfo from '../components/device/NetworkInfo'
 import ProcessList from '../components/device/ProcessList'
+import { SkeletonMetric } from '../components/ui/Skeleton'
 import { formatUptime, lastBootTime } from '../utils/time'
 import { getTagColor } from '../utils/tags'
 
@@ -143,7 +144,17 @@ export default function DeviceDetail() {
     return () => window.clearTimeout(timeout)
   }, [isCapturing])
 
-  if (isLoading) return <div className="p-4 text-sm text-slate-500 dark:text-gray-500">Loading...</div>
+  if (isLoading) {
+    return (
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <SkeletonMetric key={index} />
+          ))}
+        </div>
+      </div>
+    )
+  }
   if (!device) return <div className="p-4 text-sm text-red-400">Device not found</div>
 
   const latest = latestMetric ?? metrics[0]

@@ -2,7 +2,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,8 +19,16 @@ class NotificationRuleRequest(BaseModel):
     severity_min: str = "info"
     channel: str
     webhook_url: str | None = None
-    email_address: str | None = None
+    email_address: EmailStr | None = None
     is_enabled: bool = True
+
+    @model_validator(mode="after")
+    def validate_target(self):
+        if self.channel == "webhook" and not self.webhook_url:
+            raise ValueError("webhook_url is required for webhook notification rules")
+        if self.channel == "email" and not self.email_address:
+            raise ValueError("email_address is required for email notification rules")
+        return self
 
 
 class NotificationRuleUpdateRequest(BaseModel):
@@ -28,7 +36,7 @@ class NotificationRuleUpdateRequest(BaseModel):
     severity_min: str | None = None
     channel: str | None = None
     webhook_url: str | None = None
-    email_address: str | None = None
+    email_address: EmailStr | None = None
     is_enabled: bool | None = None
 
 

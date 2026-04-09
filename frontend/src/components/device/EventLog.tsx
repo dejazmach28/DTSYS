@@ -1,9 +1,12 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { clsx } from 'clsx'
-import { devicesApi } from '../../api/devices'
 import api from '../../api/client'
+import { devicesApi } from '../../api/devices'
 import type { Event } from '../../types'
+import Pagination from '../ui/Pagination'
+import { SkeletonTable } from '../ui/Skeleton'
 
 interface Props {
   deviceId: string
@@ -19,14 +22,25 @@ const typeColor: Record<string, string> = {
 }
 
 export default function EventLog({ deviceId, mode = 'system' }: Props) {
-  const { data: events = [] } = useQuery({
-    queryKey: ['events', deviceId, mode],
+  const [page, setPage] = useState(1)
+  const pageSize = 50
+  const { data, isLoading } = useQuery<Event[] | { data: Event[]; total: number }>({
+    queryKey: ['events', deviceId, mode, page],
     queryFn: () =>
       mode === 'agent'
         ? devicesApi.agentLogs(deviceId)
-        : api.get<Event[]>(`/devices/${deviceId}/events`).then((response) => response.data),
-    refetchInterval: 30_000,
+        : api.get<Event[]>(`/devices/${deviceId}/events`, { params: { skip: (page - 1) * pageSize, limit: pageSize } }).then((response) => ({
+            data: response.data,
+            total: Number(response.headers['x-total-count'] ?? response.data.length),
+          })),
   })
+
+  const events = mode === 'agent' ? ((data as Event[] | undefined) ?? []) : ((data as { data: Event[]; total: number } | undefined)?.data ?? [])
+  const total = mode === 'agent' ? events.length : ((data as { data: Event[]; total: number } | undefined)?.total ?? 0)
+
+  if (isLoading) {
+    return <SkeletonTable rows={6} />
+  }
 
   if (events.length === 0) {
     return <p className="text-sm text-slate-500 dark:text-gray-500">No {mode === 'agent' ? 'agent logs' : 'events'} recorded.</p>
@@ -56,24 +70,29 @@ export default function EventLog({ deviceId, mode = 'system' }: Props) {
   }
 
   return (
-    <div className="max-h-80 space-y-1 overflow-auto">
-      {events.map((ev) => (
-        <div key={ev.id} className="flex gap-3 border-b border-slate-200 py-1.5 text-xs dark:border-gray-800/60">
-          <span className="shrink-0 font-mono text-slate-400 dark:text-gray-600">
-            {format(new Date(ev.time), 'MM-dd HH:mm:ss')}
-          </span>
-          <span
-            className={clsx(
-              'shrink-0 self-start rounded px-1.5 text-xs font-medium',
-              typeColor[ev.event_type] ?? 'bg-slate-200 text-slate-500 dark:bg-gray-400/10 dark:text-gray-400',
-            )}
-          >
-            {ev.event_type.toUpperCase()}
-          </span>
-          <span className="break-all text-slate-700 dark:text-gray-300">{ev.message}</span>
-          {ev.source && <span className="shrink-0 text-slate-400 dark:text-gray-600">- {ev.source}</span>}
-        </div>
-      ))}
+    <div>
+      <div className="max-h-80 space-y-1 overflow-auto">
+        {events.map((ev) => (
+          <div key={ev.id} className="flex gap-3 border-b border-slate-200 py-1.5 text-xs dark:border-gray-800/60">
+            <span className="shrink-0 font-mono text-slate-400 dark:text-gray-600">
+              {format(new Date(ev.time), 'MM-dd HH:mm:ss')}
+            </span>
+            <span
+              className={clsx(
+                'shrink-0 self-start rounded px-1.5 text-xs font-medium',
+                typeColor[ev.event_type] ?? 'bg-slate-200 text-slate-500 dark:bg-gray-400/10 dark:text-gray-400',
+              )}
+            >
+              {ev.event_type.toUpperCase()}
+            </span>
+            <span className="break-all text-slate-700 dark:text-gray-300">{ev.message}</span>
+            {ev.source && <span className="shrink-0 text-slate-400 dark:text-gray-600">- {ev.source}</span>}
+          </div>
+        ))}
+      </div>
+      <div className="mt-4">
+        <Pagination page={page} totalPages={Math.max(1, Math.ceil(total / pageSize))} onChange={setPage} />
+      </div>
     </div>
   )
 }

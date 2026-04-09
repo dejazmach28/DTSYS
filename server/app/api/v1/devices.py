@@ -1,14 +1,17 @@
 import json
+import re
 import uuid
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from pydantic import BaseModel, Field, field_validator
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.redis import check_rate_limit, get_redis
+from app.core.security import generate_api_key, hash_api_key
 from app.db.session import get_db
+from app.models.device import Device
 from app.models.device_config import DeviceConfig
 from app.models.event import Event
 from app.models.network import DeviceNetworkInfo
@@ -20,6 +23,7 @@ from app.websocket.manager import manager
 from app.websocket.messages import ServerMessageType
 
 router = APIRouter(prefix="/devices", tags=["devices"])
+TAG_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,50}$")
 
 
 class RegisterRequest(BaseModel):
@@ -33,9 +37,19 @@ class RegisterRequest(BaseModel):
 
 
 class UpdateDeviceRequest(BaseModel):
-    label: str | None = None
-    notes: str | None = None
+    label: str | None = Field(default=None, max_length=255)
+    notes: str | None = Field(default=None, max_length=5000)
     tags: list[str] | None = None
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, tags: list[str] | None) -> list[str] | None:
+        if tags is None:
+            return tags
+        for tag in tags:
+            if not TAG_PATTERN.fullmatch(tag):
+                raise ValueError("tags must be alphanumeric and may include dash or underscore, up to 50 characters")
+        return tags
 
 
 class DeviceConfigRequest(BaseModel):
@@ -81,12 +95,15 @@ async def register_device(
 async def list_devices(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    response: Response,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     tag: str | None = Query(None),
     search: str | None = Query(None),
 ):
     service = DeviceService(db)
+    total = await service.count_devices(tag=tag, search=search)
+    response.headers["X-Total-Count"] = str(total)
     devices = await service.list_devices(skip=skip, limit=limit, tag=tag, search=search)
     return [
         {
@@ -106,6 +123,27 @@ async def list_devices(
         }
         for d in devices
     ]
+
+
+@router.get("/by-fingerprint/{fingerprint}")
+async def get_device_by_fingerprint(
+    fingerprint: str,
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(
+        select(Device).where(Device.fingerprint == fingerprint, ~Device.is_revoked)
+    )
+    device = result.scalar_one_or_none()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return {
+        "id": str(device.id),
+        "hostname": device.hostname,
+        "label": device.label,
+        "fingerprint": device.fingerprint,
+        "status": device.status,
+    }
 
 
 @router.get("/{device_id}")
@@ -252,6 +290,27 @@ async def revoke_device(
     )
     await db.commit()
     return {"message": "Device revoked"}
+
+
+@router.post("/{device_id}/rotate-key")
+async def rotate_device_key(
+    device_id: uuid.UUID,
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    service = DeviceService(db)
+    device = await service.get_device(device_id)
+    raw_key = generate_api_key()
+    device.api_key_hash = hash_api_key(raw_key)
+    await log_action(
+        db,
+        current_user,
+        "device_key_rotated",
+        resource_type="device",
+        resource_id=str(device_id),
+    )
+    await db.commit()
+    return {"device_id": str(device_id), "api_key": raw_key}
 
 
 @router.post("/{device_id}/screenshot/request")

@@ -11,6 +11,7 @@ import { tagsApi } from '../api/tags'
 import { groupsApi } from '../api/groups'
 import { formatDistanceToNow } from 'date-fns'
 import { exportToCSV } from '../utils/export'
+import { SkeletonCard } from '../components/ui/Skeleton'
 
 type Filter = 'all' | 'online' | 'offline' | 'alert'
 
@@ -168,7 +169,11 @@ export default function Dashboard() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div>
           {isLoading ? (
-            <div className="text-sm text-slate-500 dark:text-gray-500">Loading devices...</div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, index) => (
+                <SkeletonCard key={index} />
+              ))}
+            </div>
           ) : filtered.length === 0 ? (
             <div className="py-16 text-center text-slate-500 dark:text-gray-600">
               <Monitor size={40} className="mx-auto mb-3 opacity-30" />

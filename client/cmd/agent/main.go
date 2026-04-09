@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -21,11 +22,13 @@ import (
 	"github.com/dtsys/agent/internal/executor"
 	"github.com/dtsys/agent/internal/transport"
 	"github.com/dtsys/agent/internal/updater"
+	"github.com/dtsys/agent/internal/version"
 )
 
 const defaultConfigPath = "/etc/dtsys/agent.toml"
+const registrationFailureStatusPath = "/etc/dtsys/agent.error"
 
-var AgentVersion = "0.1.0"
+var AgentVersion = version.Version
 
 func main() {
 	configPath := flag.String("config", defaultConfigPath, "Path to agent config file")
@@ -160,49 +163,123 @@ func register(cfg *config.Config, cfgPath string) error {
 
 	fingerprint := buildFingerprint(osInfo.Hostname)
 
-	body := map[string]interface{}{
-		"hostname":         osInfo.Hostname,
-		"os_type":          osInfo.OSType,
-		"os_version":       osInfo.OSVersion,
-		"arch":             osInfo.Arch,
-		"fingerprint":      fingerprint,
-		"enrollment_token": cfg.Server.EnrollmentToken,
-	}
-
-	data, _ := json.Marshal(body)
 	apiURL := strings.TrimRight(cfg.Server.URL, "/")
-	// Replace ws(s) with http(s)
 	apiURL = strings.Replace(apiURL, "wss://", "https://", 1)
 	apiURL = strings.Replace(apiURL, "ws://", "http://", 1)
+	client := &http.Client{Timeout: 30 * time.Second}
+	attempt := 0
+	backoff := 5 * time.Second
 
-	resp, err := http.Post(apiURL+"/api/v1/devices/register", "application/json",
-		strings.NewReader(string(data)))
+	for {
+		attempt++
+		result, statusCode, responseBody, err := attemptRegistration(client, apiURL, map[string]interface{}{
+			"hostname":         osInfo.Hostname,
+			"os_type":          osInfo.OSType,
+			"os_version":       osInfo.OSVersion,
+			"arch":             osInfo.Arch,
+			"fingerprint":      fingerprint,
+			"enrollment_token": cfg.Server.EnrollmentToken,
+		})
+		if err == nil && statusCode == http.StatusOK {
+			cfg.Agent.DeviceID = result.DeviceID
+			cfg.Agent.APIKey = result.APIKey
+			if saveErr := config.Save(cfgPath, cfg); saveErr != nil {
+				return fmt.Errorf("save config: %w", saveErr)
+			}
+			slog.Info("device registered", "device_id", result.DeviceID)
+			return nil
+		}
+
+		if statusCode == http.StatusBadRequest {
+			return fmt.Errorf("registration failed: invalid or expired enrollment token")
+		}
+
+		if statusCode == http.StatusConflict {
+			slog.Warn("device fingerprint already registered; attempting reuse flow")
+			if reuseExistingCredentials(cfg, cfgPath) == nil {
+				return nil
+			}
+			slog.Warn("existing device reuse not completed", "detail", responseBody)
+		}
+
+		wait := backoff
+		if statusCode >= 400 && statusCode < 500 && statusCode != http.StatusConflict {
+			wait = 5 * time.Minute
+		}
+		if attempt >= 10 {
+			_ = writeRegistrationStatus(fmt.Sprintf("registration still failing after %d attempts: %v %s", attempt, err, responseBody))
+			wait = 5 * time.Minute
+		}
+		slog.Warn("registration attempt failed", "attempt", attempt, "status_code", statusCode, "error", err, "retry_in", wait)
+		time.Sleep(wait)
+		if backoff < 5*time.Minute {
+			backoff *= 2
+			if backoff > 5*time.Minute {
+				backoff = 5 * time.Minute
+			}
+		}
+	}
+}
+
+type registerResponse struct {
+	DeviceID string `json:"device_id"`
+	APIKey   string `json:"api_key"`
+}
+
+func attemptRegistration(client *http.Client, apiURL string, body map[string]interface{}) (registerResponse, int, string, error) {
+	data, _ := json.Marshal(body)
+	resp, err := client.Post(apiURL+"/api/v1/devices/register", "application/json", strings.NewReader(string(data)))
 	if err != nil {
-		return fmt.Errorf("register request: %w", err)
+		return registerResponse{}, 0, "", fmt.Errorf("register request: %w", err)
 	}
 	defer resp.Body.Close()
 
+	bodyBytes, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("server returned %d", resp.StatusCode)
+		return registerResponse{}, resp.StatusCode, strings.TrimSpace(string(bodyBytes)), fmt.Errorf("server returned %d", resp.StatusCode)
 	}
 
-	var result struct {
-		DeviceID string `json:"device_id"`
-		APIKey   string `json:"api_key"`
+	var result registerResponse
+	if err := json.Unmarshal(bodyBytes, &result); err != nil {
+		return registerResponse{}, resp.StatusCode, string(bodyBytes), fmt.Errorf("parse response: %w", err)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("parse response: %w", err)
+	return result, resp.StatusCode, string(bodyBytes), nil
+}
+
+func reuseExistingCredentials(cfg *config.Config, cfgPath string) error {
+	fmt.Println("This device fingerprint is already registered.")
+	fmt.Print("Enter existing device ID (leave blank to abort): ")
+	var deviceID string
+	if _, err := fmt.Scanln(&deviceID); err != nil {
+		return err
+	}
+	if strings.TrimSpace(deviceID) == "" {
+		return fmt.Errorf("no device id provided")
+	}
+	fmt.Print("Enter existing API key: ")
+	var apiKey string
+	if _, err := fmt.Scanln(&apiKey); err != nil {
+		return err
+	}
+	if strings.TrimSpace(apiKey) == "" {
+		return fmt.Errorf("no api key provided")
 	}
 
-	cfg.Agent.DeviceID = result.DeviceID
-	cfg.Agent.APIKey = result.APIKey
-
+	cfg.Agent.DeviceID = strings.TrimSpace(deviceID)
+	cfg.Agent.APIKey = strings.TrimSpace(apiKey)
 	if err := config.Save(cfgPath, cfg); err != nil {
-		return fmt.Errorf("save config: %w", err)
+		return err
 	}
-
-	slog.Info("device registered", "device_id", result.DeviceID)
+	slog.Info("reused existing device credentials", "device_id", cfg.Agent.DeviceID)
 	return nil
+}
+
+func writeRegistrationStatus(message string) error {
+	path := registrationFailureStatusPath
+	if runtime.GOOS == "windows" {
+		path = filepath.Join(os.TempDir(), "dtsys-agent.error")
+	}
+	return os.WriteFile(path, []byte(message+"\n"), 0600)
 }
 
 func buildFingerprint(hostname string) string {

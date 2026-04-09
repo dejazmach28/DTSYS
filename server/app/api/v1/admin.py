@@ -1,10 +1,10 @@
 import uuid
 from typing import Annotated
 import secrets
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -66,18 +66,25 @@ async def generate_enrollment_token(
 async def get_audit_log(
     current_user: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    response: Response,
+    skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     user_id: uuid.UUID | None = Query(None),
     action: str | None = Query(None),
     resource_type: str | None = Query(None),
 ):
-    query = select(AuditLog).order_by(AuditLog.timestamp.desc()).limit(limit)
+    filters = []
     if user_id:
-        query = query.where(AuditLog.user_id == user_id)
+        filters.append(AuditLog.user_id == user_id)
     if action:
-        query = query.where(AuditLog.action == action)
+        filters.append(AuditLog.action == action)
     if resource_type:
-        query = query.where(AuditLog.resource_type == resource_type)
+        filters.append(AuditLog.resource_type == resource_type)
+
+    total = int(await db.scalar(select(func.count()).select_from(AuditLog).where(*filters)) or 0)
+    response.headers["X-Total-Count"] = str(total)
+
+    query = select(AuditLog).where(*filters).order_by(AuditLog.timestamp.desc()).offset(skip).limit(limit)
 
     result = await db.execute(query)
     entries = result.scalars().all()

@@ -1,9 +1,9 @@
 import uuid
 from typing import Annotated
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Response
+from pydantic import BaseModel, field_validator
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.db.session import get_db
 from app.models.user import User
@@ -18,6 +18,14 @@ router = APIRouter(prefix="/devices/{device_id}/commands", tags=["commands"])
 class CommandRequest(BaseModel):
     command_type: str  # shell|script|update_check|reboot
     payload: dict = {}
+
+    @field_validator("payload")
+    @classmethod
+    def validate_shell_payload(cls, payload: dict) -> dict:
+        command = payload.get("command")
+        if isinstance(command, str) and len(command) > 10000:
+            raise ValueError("shell command payload must be 10000 characters or less")
+        return payload
 
 
 @router.post("")
@@ -55,12 +63,22 @@ async def list_commands(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    response: Response,
+    skip: int = 0,
     limit: int = 50,
 ):
+    total = int(
+        await db.scalar(
+            select(func.count()).select_from(Command).where(Command.device_id == device_id)
+        )
+        or 0
+    )
+    response.headers["X-Total-Count"] = str(total)
     result = await db.execute(
         select(Command)
         .where(Command.device_id == device_id)
         .order_by(Command.created_at.desc())
+        .offset(skip)
         .limit(limit)
     )
     cmds = result.scalars().all()

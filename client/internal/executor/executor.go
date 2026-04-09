@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"image"
 	_ "image/jpeg"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/dtsys/agent/internal/collector"
 	agentconfig "github.com/dtsys/agent/internal/config"
 	"github.com/dtsys/agent/internal/transport"
+	"github.com/dtsys/agent/internal/version"
 	"github.com/shirou/gopsutil/v3/disk"
 )
 
@@ -23,15 +26,10 @@ const maxOutputBytes = 1 * 1024 * 1024 // 1MB output cap
 
 type DiagnosticsConfigProvider func() *agentconfig.Config
 
-var (
-	diagnosticsVersion  = "0.1.0"
-	diagnosticsConfigFn DiagnosticsConfigProvider
-)
+var diagnosticsConfigFn DiagnosticsConfigProvider
 
 func ConfigureDiagnostics(version string, configFn DiagnosticsConfigProvider) {
-	if version != "" {
-		diagnosticsVersion = version
-	}
+	_ = version
 	diagnosticsConfigFn = configFn
 }
 
@@ -76,6 +74,8 @@ func Execute(ctx context.Context, cmd transport.IncomingCommand, send func(trans
 		exitCode = 1
 	}
 
+	_ = appendCommandAudit(cmd.CommandID, cmd.CommandType, exitCode)
+
 	output := string(out)
 	if len(output) > maxOutputBytes {
 		output = output[:maxOutputBytes] + "\n[output truncated]"
@@ -92,6 +92,9 @@ func runShell(ctx context.Context, payload map[string]interface{}) ([]byte, int,
 	command, _ := payload["command"].(string)
 	if command == "" {
 		return nil, 1, fmt.Errorf("command payload missing 'command' field")
+	}
+	if len(command) > 10000 {
+		return nil, 1, fmt.Errorf("command exceeds 10000 character limit")
 	}
 
 	var cmd *exec.Cmd
@@ -306,7 +309,8 @@ func runProcessList(ctx context.Context, cmd transport.IncomingCommand, send fun
 func runDiagnostics(ctx context.Context) ([]byte, int, error) {
 	_ = ctx
 	report := map[string]interface{}{
-		"agent_version": diagnosticsVersion,
+		"agent_version": version.Version,
+		"build_date":    version.BuildDate,
 	}
 
 	if osInfo, err := collector.CollectOSInfo(); err == nil {
@@ -359,6 +363,28 @@ func runDiagnostics(ctx context.Context) ([]byte, int, error) {
 		return []byte(err.Error()), 1, err
 	}
 	return output, 0, nil
+}
+
+func appendCommandAudit(commandID, commandType string, exitCode int) error {
+	path := "/var/log/dtsys-agent-commands.log"
+	if runtime.GOOS == "windows" {
+		path = filepath.Join(os.TempDir(), "dtsys-agent-commands.log")
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = fmt.Fprintf(
+		f,
+		"%s | %s | %s | %d\n",
+		time.Now().Format(time.RFC3339),
+		commandID,
+		commandType,
+		exitCode,
+	)
+	return err
 }
 
 func collectPartitions() ([]map[string]interface{}, error) {

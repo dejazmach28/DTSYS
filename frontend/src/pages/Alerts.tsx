@@ -1,11 +1,14 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle } from 'lucide-react'
-import { useAlerts, useResolveAlert } from '../hooks/useAlerts'
+import { alertsApi } from '../api/alerts'
+import { useResolveAlert } from '../hooks/useAlerts'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 import { Link } from 'react-router-dom'
 import { useDevices } from '../hooks/useDevices'
 import { exportToCSV } from '../utils/export'
+import Pagination from '../components/ui/Pagination'
 
 const severityConfig = {
   critical: { badge: 'bg-red-500/15 text-red-400 border-red-500/30', dot: 'bg-red-500' },
@@ -15,7 +18,19 @@ const severityConfig = {
 
 export default function Alerts() {
   const [showResolved, setShowResolved] = useState(false)
-  const { data: alerts = [] } = useAlerts({ resolved: showResolved ? undefined : false })
+  const [page, setPage] = useState(1)
+  const pageSize = 20
+  const { data: alertResponse } = useQuery({
+    queryKey: ['alerts', 'page', page, showResolved],
+    queryFn: () =>
+      alertsApi.listPage({
+        resolved: showResolved ? undefined : false,
+        limit: pageSize,
+        skip: (page - 1) * pageSize,
+      }),
+  })
+  const alerts = alertResponse?.data ?? []
+  const total = alertResponse?.total ?? 0
   const { data: devices = [] } = useDevices()
   const resolve = useResolveAlert()
 
@@ -153,6 +168,8 @@ export default function Alerts() {
           ))}
         </div>
       )}
+
+      <Pagination page={page} totalPages={Math.max(1, Math.ceil(total / pageSize))} onChange={setPage} />
     </div>
   )
 }

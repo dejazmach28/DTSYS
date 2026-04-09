@@ -2,7 +2,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -17,6 +17,14 @@ class BulkCommandRequest(BaseModel):
     device_ids: list[uuid.UUID] = Field(min_length=1)
     command_type: str
     payload: dict = {}
+
+    @field_validator("payload")
+    @classmethod
+    def validate_shell_payload(cls, payload: dict) -> dict:
+        command = payload.get("command")
+        if isinstance(command, str) and len(command) > 10000:
+            raise ValueError("shell command payload must be 10000 characters or less")
+        return payload
 
 
 @router.post("")

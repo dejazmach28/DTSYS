@@ -1,6 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import Layout from './components/layout/Layout'
+import ErrorBoundary from './components/ui/ErrorBoundary'
+import WhatsNew from './components/ui/WhatsNew'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import DeviceDetail from './pages/DeviceDetail'
@@ -12,6 +14,7 @@ import SoftwareUpdates from './pages/SoftwareUpdates'
 import Onboarding from './pages/Onboarding'
 import DeviceCompare from './pages/DeviceCompare'
 import NetworkMap from './pages/NetworkMap'
+import Status from './pages/Status'
 import { devicesApi } from './api/devices'
 import { useAuthStore } from './store/authStore'
 
@@ -26,7 +29,14 @@ const queryClient = new QueryClient({
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore()
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />
+  return isAuthenticated ? (
+    <>
+      <WhatsNew />
+      {children}
+    </>
+  ) : (
+    <Navigate to="/login" replace />
+  )
 }
 
 function HomeRoute() {
@@ -49,17 +59,22 @@ function HomeRoute() {
   return <Dashboard />
 }
 
+function withBoundary(element: React.ReactNode) {
+  return <ErrorBoundary>{element}</ErrorBoundary>
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<Login />} />
+          <Route path="/login" element={withBoundary(<Login />)} />
+          <Route path="/status" element={withBoundary(<Status />)} />
           <Route
             path="/onboarding"
             element={
               <ProtectedRoute>
-                <Onboarding />
+                {withBoundary(<Onboarding />)}
               </ProtectedRoute>
             }
           />
@@ -71,15 +86,15 @@ export default function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<HomeRoute />} />
-            <Route path="devices/:id" element={<DeviceDetail />} />
-            <Route path="compare" element={<DeviceCompare />} />
-            <Route path="network-map" element={<NetworkMap />} />
-            <Route path="alerts" element={<Alerts />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="software-updates" element={<SoftwareUpdates />} />
-            <Route path="scheduled" element={<ScheduledCommands />} />
-            <Route path="settings" element={<Settings />} />
+            <Route index element={withBoundary(<HomeRoute />)} />
+            <Route path="devices/:id" element={withBoundary(<DeviceDetail />)} />
+            <Route path="compare" element={withBoundary(<DeviceCompare />)} />
+            <Route path="network-map" element={withBoundary(<NetworkMap />)} />
+            <Route path="alerts" element={withBoundary(<Alerts />)} />
+            <Route path="reports" element={withBoundary(<Reports />)} />
+            <Route path="software-updates" element={withBoundary(<SoftwareUpdates />)} />
+            <Route path="scheduled" element={withBoundary(<ScheduledCommands />)} />
+            <Route path="settings" element={withBoundary(<Settings />)} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

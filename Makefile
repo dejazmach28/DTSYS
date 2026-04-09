@@ -1,7 +1,7 @@
 GO ?= go
 UV ?= server/.venv/bin/uv
 
-.PHONY: dev-server dev-frontend dev-agent build-agents build-frontend docker-up docker-down migrate test-server test-client lint-server fmt-client clean
+.PHONY: dev-server dev-frontend dev-agent build-agents build-frontend docker-up docker-down dev-deps dev-stop migrate test-server test-client lint-server fmt-client clean
 
 dev-server:
 	cd server && .venv/bin/uvicorn app.main:app --reload --port 8000
@@ -28,6 +28,12 @@ docker-up:
 docker-down:
 	docker compose down
 
+dev-deps:
+	docker compose -f docker-compose.dev.yml up -d
+
+dev-stop:
+	docker compose -f docker-compose.dev.yml down
+
 migrate:
 	cd server && .venv/bin/alembic upgrade head
 
@@ -41,7 +47,7 @@ lint-server:
 	cd server && .venv/bin/ruff check app/
 
 fmt-client:
-	cd client && $(GO)fmt -w .
+	gofmt -w $$(find client -name "*.go")
 
 clean:
 	rm -rf dist/agents/* frontend/dist client/bin

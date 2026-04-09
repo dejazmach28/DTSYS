@@ -18,6 +18,7 @@ from app.models.audit_log import AuditLog
 from app.models.command import Command
 from app.models.device import Device
 from app.models.notification_rule import NotificationRule
+from app.models.software import SoftwareInventory
 from app.models.user import User
 
 ADMIN_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -67,15 +68,11 @@ class DummySession:
             Command: [],
             AuditLog: [],
             NotificationRule: [],
+            SoftwareInventory: [],
         }
 
     async def execute(self, statement):
-        entity = None
-        descriptions = getattr(statement, "column_descriptions", [])
-        if descriptions:
-            entity = descriptions[0].get("entity")
-
-        rows = list(self._store.get(entity, []))
+        rows = list(self._rows_for_statement(statement))
 
         for criterion in getattr(statement, "_where_criteria", ()):
             rows = [row for row in rows if _matches(row, criterion)]
@@ -88,11 +85,21 @@ class DummySession:
             if key:
                 rows.sort(key=lambda row: getattr(row, key) or datetime.min.replace(tzinfo=timezone.utc), reverse=reverse)
 
+        offset_clause = getattr(statement, "_offset_clause", None)
+        if isinstance(offset_clause, BindParameter):
+            rows = rows[int(offset_clause.value) :]
+
         limit_clause = getattr(statement, "_limit_clause", None)
         if isinstance(limit_clause, BindParameter):
             rows = rows[: int(limit_clause.value)]
 
         return DummyResult(rows)
+
+    async def scalar(self, statement):
+        rows = list(self._rows_for_statement(statement))
+        for criterion in getattr(statement, "_where_criteria", ()):
+            rows = [row for row in rows if _matches(row, criterion)]
+        return len(rows)
 
     async def commit(self) -> None:
         return None
@@ -130,6 +137,22 @@ class DummySession:
 
     def items(self, model):
         return list(self._store.get(model, []))
+
+    def _rows_for_statement(self, statement):
+        entity = None
+        descriptions = getattr(statement, "column_descriptions", [])
+        if descriptions:
+            entity = descriptions[0].get("entity")
+        if entity is not None:
+            return self._store.get(entity, [])
+
+        for from_clause in getattr(statement, "get_final_froms", lambda: [])():
+            table_name = getattr(from_clause, "name", None)
+            model = TABLE_MODELS.get(table_name)
+            if model is not None:
+                return self._store.get(model, [])
+
+        return []
 
 
 def _seed_defaults(obj) -> None:
@@ -198,6 +221,17 @@ def _extract_value(expression):
     if isinstance(expression, BindParameter):
         return expression.value
     return expression
+
+
+TABLE_MODELS = {
+    "users": User,
+    "devices": Device,
+    "alerts": Alert,
+    "commands": Command,
+    "audit_log": AuditLog,
+    "notification_rules": NotificationRule,
+    "software_inventory": SoftwareInventory,
+}
 
 
 @pytest_asyncio.fixture

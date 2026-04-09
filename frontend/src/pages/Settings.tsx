@@ -6,6 +6,7 @@ import api from '../api/client'
 import { adminApi } from '../api/admin'
 import { devicesApi } from '../api/devices'
 import { notificationRulesApi } from '../api/notificationRules'
+import Pagination from '../components/ui/Pagination'
 import { useAuthStore } from '../store/authStore'
 import { exportToCSV } from '../utils/export'
 
@@ -21,6 +22,7 @@ export default function Settings() {
   })
   const [token, setToken] = useState<string | null>(null)
   const [auditAction, setAuditAction] = useState('')
+  const [auditPage, setAuditPage] = useState(1)
   const [msg, setMsg] = useState('')
   const queryClient = useQueryClient()
 
@@ -29,12 +31,15 @@ export default function Settings() {
     queryFn: notificationRulesApi.list,
     enabled: role === 'admin',
   })
-  const { data: auditLog = [] } = useQuery({
-    queryKey: ['audit-log', auditAction],
-    queryFn: () => adminApi.auditLog({ action: auditAction || undefined, limit: 100 }),
+  const auditPageSize = 25
+  const { data: auditResponse } = useQuery({
+    queryKey: ['audit-log', auditAction, auditPage],
+    queryFn: () => adminApi.auditLogPage({ action: auditAction || undefined, limit: auditPageSize, skip: (auditPage - 1) * auditPageSize }),
     enabled: role === 'admin',
     refetchInterval: 30_000,
   })
+  const auditLog = auditResponse?.data ?? []
+  const auditTotal = auditResponse?.total ?? 0
   const { data: authConfig } = useQuery({
     queryKey: ['auth-config'],
     queryFn: adminApi.authConfig,
@@ -468,6 +473,9 @@ export default function Settings() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="mt-4">
+          <Pagination page={auditPage} totalPages={Math.max(1, Math.ceil(auditTotal / auditPageSize))} onChange={setAuditPage} />
         </div>
       </section>
     </div>

@@ -1,6 +1,6 @@
 import uuid
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.device import Device
 from app.core.security import generate_api_key, hash_api_key
@@ -84,3 +84,24 @@ class DeviceService:
             query.offset(skip).limit(limit)
         )
         return list(result.scalars().all())
+
+    async def count_devices(
+        self,
+        tag: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        from sqlalchemy import func
+
+        query = select(func.count()).select_from(Device).where(~Device.is_revoked)
+        if tag:
+            query = query.where(Device.tags.any(tag))
+        if search:
+            search_term = f"%{search}%"
+            query = query.where(
+                or_(
+                    Device.hostname.ilike(search_term),
+                    Device.label.ilike(search_term),
+                    Device.ip_address.ilike(search_term),
+                )
+            )
+        return int(await self.db.scalar(query) or 0)
