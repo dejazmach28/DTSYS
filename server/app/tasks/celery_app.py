@@ -12,6 +12,7 @@ celery_app = Celery(
     include=[
         "app.tasks.alert_tasks",
         "app.tasks.cleanup_tasks",
+        "app.tasks.email_tasks",
         "app.tasks.notification_tasks",
         "app.tasks.scheduler_tasks",
     ],

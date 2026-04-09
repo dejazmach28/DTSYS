@@ -4,6 +4,7 @@ import type {
   DeviceConfig,
   DeviceConfigResponse,
   DeviceNetworkResponse,
+  Event,
   ProcessListResponse,
   ScreenshotResponse,
 } from '../types'
@@ -19,6 +20,7 @@ export const devicesApi = {
   get: (id: string) => api.get<Device>(`/devices/${id}`).then((r) => r.data),
   network: (id: string) => api.get<DeviceNetworkResponse>(`/devices/${id}/network`).then((r) => r.data),
   processes: (id: string) => api.get<ProcessListResponse>(`/devices/${id}/processes`).then((r) => r.data),
+  agentLogs: (id: string) => api.get<Event[]>(`/devices/${id}/agent-logs`).then((r) => r.data),
   screenshot: (id: string) => api.get<ScreenshotResponse>(`/devices/${id}/screenshot`).then((r) => r.data),
   requestScreenshot: (id: string) => api.post(`/devices/${id}/screenshot/request`).then((r) => r.data),
   config: (id: string) => api.get<DeviceConfigResponse>(`/devices/${id}/config`).then((r) => r.data),

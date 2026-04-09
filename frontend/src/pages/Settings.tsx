@@ -15,8 +15,9 @@ export default function Settings() {
   const [newRule, setNewRule] = useState({
     alert_type: '*',
     severity_min: 'warning',
-    channel: 'browser' as 'browser' | 'webhook',
+    channel: 'browser' as 'browser' | 'webhook' | 'email',
     webhook_url: '',
+    email_address: '',
   })
   const [token, setToken] = useState<string | null>(null)
   const [auditAction, setAuditAction] = useState('')
@@ -45,16 +46,22 @@ export default function Settings() {
     enabled: role === 'admin',
     refetchInterval: 10_000,
   })
+  const { data: storageStats } = useQuery({
+    queryKey: ['storage-stats'],
+    queryFn: adminApi.storageStats,
+    enabled: role === 'admin',
+  })
 
   const createRule = useMutation({
     mutationFn: () =>
       notificationRulesApi.create({
         ...newRule,
         webhook_url: newRule.channel === 'webhook' ? newRule.webhook_url : null,
+        email_address: newRule.channel === 'email' ? newRule.email_address : null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notification-rules'] })
-      setNewRule({ alert_type: '*', severity_min: 'warning', channel: 'browser', webhook_url: '' })
+      setNewRule({ alert_type: '*', severity_min: 'warning', channel: 'browser', webhook_url: '', email_address: '' })
     },
   })
 
@@ -69,6 +76,12 @@ export default function Settings() {
     mutationFn: (deviceId: string) => devicesApi.disconnect(deviceId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-connections'] })
+    },
+  })
+  const cleanupNow = useMutation({
+    mutationFn: adminApi.cleanup,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['storage-stats'] })
     },
   })
 
@@ -176,7 +189,7 @@ export default function Settings() {
       <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
         <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-gray-200">Notification Rules</h2>
         <p className="mb-4 text-xs text-slate-500 dark:text-gray-500">
-          Control browser and webhook notifications for new alerts.
+          Control browser, webhook, and email notifications for new alerts.
         </p>
 
         <div className="mb-5 overflow-x-auto rounded-lg border border-slate-200 dark:border-gray-800">
@@ -196,7 +209,7 @@ export default function Settings() {
                   <td className="px-3 py-2 text-slate-900 dark:text-gray-100">{rule.alert_type}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-gray-300">{rule.severity_min}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-gray-300">{rule.channel}</td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-gray-300">{rule.webhook_url ?? 'Browser session'}</td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-gray-300">{rule.webhook_url ?? rule.email_address ?? 'Browser session'}</td>
                   <td className="px-3 py-2">
                     <button
                       onClick={() => updateRule.mutate({ id: rule.id, is_enabled: !rule.is_enabled })}
@@ -240,17 +253,24 @@ export default function Settings() {
           </select>
           <select
             value={newRule.channel}
-            onChange={(event) => setNewRule((current) => ({ ...current, channel: event.target.value as 'browser' | 'webhook' }))}
+            onChange={(event) => setNewRule((current) => ({ ...current, channel: event.target.value as 'browser' | 'webhook' | 'email' }))}
             className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
           >
             <option value="browser">Browser</option>
             <option value="webhook">Webhook</option>
+            <option value="email">Email</option>
           </select>
           <input
-            value={newRule.webhook_url}
-            onChange={(event) => setNewRule((current) => ({ ...current, webhook_url: event.target.value }))}
-            placeholder="Webhook URL"
-            disabled={newRule.channel !== 'webhook'}
+            value={newRule.channel === 'email' ? newRule.email_address : newRule.webhook_url}
+            onChange={(event) =>
+              setNewRule((current) => ({
+                ...current,
+                webhook_url: current.channel === 'webhook' ? event.target.value : current.webhook_url,
+                email_address: current.channel === 'email' ? event.target.value : current.email_address,
+              }))
+            }
+            placeholder={newRule.channel === 'email' ? 'Email address' : 'Webhook URL'}
+            disabled={newRule.channel === 'browser'}
             className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
           />
         </div>
@@ -260,6 +280,36 @@ export default function Settings() {
         >
           Add Rule
         </button>
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-gray-200">Storage</h2>
+            <p className="text-xs text-slate-500 dark:text-gray-500">Current row counts and retention policy.</p>
+          </div>
+          <button
+            onClick={() => cleanupNow.mutate()}
+            disabled={cleanupNow.isPending}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+          >
+            Run Cleanup Now
+          </button>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          <StorageStat label="Devices" value={storageStats?.devices ?? 0} />
+          <StorageStat label="Metrics Rows" value={storageStats?.metrics_rows ?? 0} />
+          <StorageStat label="Events Rows" value={storageStats?.events_rows ?? 0} />
+          <StorageStat label="Commands Rows" value={storageStats?.commands_rows ?? 0} />
+          <StorageStat label="Alerts Rows" value={storageStats?.alerts_rows ?? 0} />
+          <StorageStat label="Disk Estimate" value={`${storageStats?.disk_estimate_mb ?? 0} MB`} />
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <StorageStat label="Metric Retention" value={`${storageStats?.retention_days.metrics ?? 90} days`} subtle />
+          <StorageStat label="Event Retention" value={`${storageStats?.retention_days.events ?? 365} days`} subtle />
+          <StorageStat label="Command Retention" value={`${storageStats?.retention_days.commands ?? 180} days`} subtle />
+          <StorageStat label="Alert Retention" value={`${storageStats?.retention_days.alerts ?? 365} days`} subtle />
+        </div>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
@@ -420,6 +470,15 @@ export default function Settings() {
           </table>
         </div>
       </section>
+    </div>
+  )
+}
+
+function StorageStat({ label, value, subtle = false }: { label: string; value: string | number; subtle?: boolean }) {
+  return (
+    <div className={`rounded-lg border p-3 ${subtle ? 'border-slate-200 bg-slate-50 dark:border-gray-800 dark:bg-gray-950/40' : 'border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-950/20'}`}>
+      <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-gray-600">{label}</p>
+      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-gray-100">{value}</p>
     </div>
   )
 }

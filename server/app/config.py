@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # App
     ENVIRONMENT: str = "development"
     APP_NAME: str = "DTSYS"
+    BASE_URL: str = "http://localhost:8000"
     API_V1_PREFIX: str = "/api/v1"
 
     # Device heartbeat: if not seen in this many seconds, mark offline
@@ -45,6 +46,21 @@ class Settings(BaseSettings):
     LDAP_BASE_DN: str = ""
     LDAP_USER_FILTER: str = "(sAMAccountName={username})"
     LDAP_ADMIN_GROUP_DN: str = ""
+
+    # Email notifications
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "dtsys@example.com"
+    SMTP_TLS: bool = True
+    EMAIL_ENABLED: bool = False
+
+    # Data retention
+    METRIC_RETENTION_DAYS: int = 90
+    EVENT_RETENTION_DAYS: int = 365
+    COMMAND_RETENTION_DAYS: int = 180
+    ALERT_RETENTION_DAYS: int = 365
 
     @property
     def is_production(self) -> bool:

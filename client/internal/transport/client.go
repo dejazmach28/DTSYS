@@ -214,6 +214,12 @@ func (c *Client) SendProcessList(processes []ProcessInfo) {
 	c.Send(Message{Type: MsgTypeProcessList, Data: ProcessListData{Processes: processes}})
 }
 
+func (c *Client) IsConnected() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn != nil
+}
+
 func buildWSURL(serverURL, deviceID, apiKey string) (string, error) {
 	u, err := url.Parse(serverURL)
 	if err != nil {

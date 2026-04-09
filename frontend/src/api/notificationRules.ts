@@ -6,8 +6,9 @@ export const notificationRulesApi = {
   create: (data: {
     alert_type: string
     severity_min: string
-    channel: 'browser' | 'webhook'
+    channel: 'browser' | 'webhook' | 'email'
     webhook_url?: string | null
+    email_address?: string | null
     is_enabled?: boolean
   }) => api.post<NotificationRule>('/notification-rules', data).then((r) => r.data),
   update: (id: string, data: Partial<NotificationRule>) =>

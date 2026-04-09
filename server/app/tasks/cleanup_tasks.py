@@ -1,34 +1,87 @@
 from datetime import datetime, timedelta, timezone
 import asyncio
 
-from app.tasks.celery_app import celery_app
+from sqlalchemy import delete, func, select
+
+from app.config import get_settings
 from app.core.logging import get_logger
+from app.db.session import AsyncSessionLocal
+from app.models.alert import Alert
+from app.models.command import Command
+from app.models.device import Device
+from app.models.event import Event
+from app.models.metrics import DeviceMetric
+from app.tasks.celery_app import celery_app
 
 log = get_logger(__name__)
 
 
 @celery_app.task(name="app.tasks.cleanup_tasks.cleanup_old_metrics")
-def cleanup_old_metrics(retain_days: int = 90):
-    """Delete metrics older than retain_days to keep DB size manageable."""
-    asyncio.run(_cleanup_async(retain_days))
+def cleanup_old_metrics() -> None:
+    asyncio.run(run_cleanup())
 
 
-async def _cleanup_async(retain_days: int):
-    from sqlalchemy import delete
-    from app.db.session import AsyncSessionLocal
-    from app.models.metrics import DeviceMetric
-    from app.models.event import Event
-
-    cutoff = datetime.now(timezone.utc) - timedelta(days=retain_days)
+async def run_cleanup() -> dict[str, int]:
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    metric_cutoff = now - timedelta(days=settings.METRIC_RETENTION_DAYS)
+    event_cutoff = now - timedelta(days=settings.EVENT_RETENTION_DAYS)
+    command_cutoff = now - timedelta(days=settings.COMMAND_RETENTION_DAYS)
+    alert_cutoff = now - timedelta(days=settings.ALERT_RETENTION_DAYS)
 
     async with AsyncSessionLocal() as db:
-        result = await db.execute(delete(DeviceMetric).where(DeviceMetric.time < cutoff))
-        metrics_deleted = result.rowcount
-
-        # Keep events for longer (1 year)
-        event_cutoff = datetime.now(timezone.utc) - timedelta(days=365)
-        result = await db.execute(delete(Event).where(Event.time < event_cutoff))
-        events_deleted = result.rowcount
-
+        metrics_deleted = await _delete_and_count(db, delete(DeviceMetric).where(DeviceMetric.time < metric_cutoff))
+        events_deleted = await _delete_and_count(db, delete(Event).where(Event.time < event_cutoff))
+        commands_deleted = await _delete_and_count(db, delete(Command).where(Command.created_at < command_cutoff))
+        alerts_deleted = await _delete_and_count(db, delete(Alert).where(Alert.created_at < alert_cutoff, Alert.is_resolved))
         await db.commit()
-        log.info("cleanup_complete", metrics_deleted=metrics_deleted, events_deleted=events_deleted)
+
+    deleted = {
+        "metrics": metrics_deleted,
+        "events": events_deleted,
+        "commands": commands_deleted,
+        "alerts": alerts_deleted,
+    }
+    log.info("cleanup_complete", **deleted)
+    return deleted
+
+
+async def collect_storage_stats() -> dict:
+    settings = get_settings()
+    async with AsyncSessionLocal() as db:
+        devices = await _scalar_count(db, select(func.count()).select_from(Device).where(~Device.is_revoked))
+        metrics_rows = await _scalar_count(db, select(func.count()).select_from(DeviceMetric))
+        events_rows = await _scalar_count(db, select(func.count()).select_from(Event))
+        commands_rows = await _scalar_count(db, select(func.count()).select_from(Command))
+        alerts_rows = await _scalar_count(db, select(func.count()).select_from(Alert))
+        oldest_metric = await db.scalar(select(func.min(DeviceMetric.time)))
+
+    disk_estimate_mb = round(
+        ((metrics_rows * 160) + (events_rows * 220) + (commands_rows * 320) + (alerts_rows * 180)) / 1024 / 1024,
+        2,
+    )
+    return {
+        "devices": devices,
+        "metrics_rows": metrics_rows,
+        "events_rows": events_rows,
+        "commands_rows": commands_rows,
+        "alerts_rows": alerts_rows,
+        "oldest_metric": oldest_metric.isoformat() if oldest_metric else None,
+        "disk_estimate_mb": disk_estimate_mb,
+        "retention_days": {
+            "metrics": settings.METRIC_RETENTION_DAYS,
+            "events": settings.EVENT_RETENTION_DAYS,
+            "commands": settings.COMMAND_RETENTION_DAYS,
+            "alerts": settings.ALERT_RETENTION_DAYS,
+        },
+    }
+
+
+async def _delete_and_count(db, stmt) -> int:
+    result = await db.execute(stmt)
+    return int(result.rowcount or 0)
+
+
+async def _scalar_count(db, stmt) -> int:
+    value = await db.scalar(stmt)
+    return int(value or 0)

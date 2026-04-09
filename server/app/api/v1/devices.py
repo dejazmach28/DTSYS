@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.core.redis import check_rate_limit, get_redis
 from app.db.session import get_db
 from app.models.device_config import DeviceConfig
+from app.models.event import Event
 from app.models.network import DeviceNetworkInfo
 from app.models.user import User
 from app.dependencies import get_current_user, require_admin
@@ -296,6 +297,35 @@ async def get_device_processes(
     if payload is None:
         raise HTTPException(status_code=404, detail="Process list not found")
     return json.loads(payload)
+
+
+@router.get("/{device_id}/agent-logs")
+async def get_agent_logs(
+    device_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = Query(200, ge=1, le=1000),
+):
+    result = await db.execute(
+        select(Event)
+        .where(
+            Event.device_id == device_id,
+            (Event.source.like("agent/%")) | (Event.event_type == "agent_log"),
+        )
+        .order_by(Event.time.desc())
+        .limit(limit)
+    )
+    events = result.scalars().all()
+    return [
+        {
+            "id": str(event.id),
+            "time": event.time.isoformat(),
+            "event_type": event.event_type,
+            "source": event.source,
+            "message": event.message,
+        }
+        for event in events
+    ]
 
 
 @router.post("/{device_id}/disconnect")

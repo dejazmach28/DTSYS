@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { LayoutDashboard, Bell, Settings, Shield, BarChart2, Clock3, PackageOpen, Plus } from 'lucide-react'
+import { LayoutDashboard, Bell, Settings, Shield, BarChart2, Clock3, PackageOpen, Plus, Network } from 'lucide-react'
 import { useAlerts } from '../../hooks/useAlerts'
 import { clsx } from 'clsx'
 import { groupsApi } from '../../api/groups'
@@ -11,6 +11,7 @@ const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/alerts', icon: Bell, label: 'Alerts' },
   { to: '/reports', icon: BarChart2, label: 'Reports' },
+  { to: '/network-map', icon: Network, label: 'Network Map' },
   { to: '/software-updates', icon: PackageOpen, label: 'Software Updates' },
   { to: '/scheduled', icon: Clock3, label: 'Scheduled' },
   { to: '/settings', icon: Settings, label: 'Settings' },

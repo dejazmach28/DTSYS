@@ -125,8 +125,9 @@ export interface NotificationRule {
   id: string
   alert_type: string
   severity_min: 'info' | 'warning' | 'critical'
-  channel: 'browser' | 'webhook'
+  channel: 'browser' | 'webhook' | 'email'
   webhook_url: string | null
+  email_address: string | null
   is_enabled: boolean
   created_at: string | null
 }
@@ -207,6 +208,26 @@ export interface LiveConnection {
 export interface LiveConnectionsResponse {
   total: number
   devices: LiveConnection[]
+}
+
+export interface StorageCleanupResponse {
+  deleted: Record<string, number>
+}
+
+export interface StorageStatsResponse {
+  devices: number
+  metrics_rows: number
+  events_rows: number
+  commands_rows: number
+  alerts_rows: number
+  oldest_metric: string | null
+  disk_estimate_mb: number
+  retention_days: {
+    metrics: number
+    events: number
+    commands: number
+    alerts: number
+  }
 }
 
 export interface User {

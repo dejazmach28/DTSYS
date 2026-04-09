@@ -4,6 +4,7 @@ from app.models.alert import Alert
 from app.models.device import Device
 from app.models.notification_rule import NotificationRule
 from app.services.event_stream import alert_event_stream
+from app.tasks.email_tasks import send_alert_email_task
 from app.tasks.notification_tasks import deliver_webhook_notification
 
 
@@ -46,6 +47,8 @@ class NotificationService:
                 browser_sent = True
             if rule.channel == "webhook" and rule.webhook_url:
                 deliver_webhook_notification.delay(rule.webhook_url, payload)
+            if rule.channel == "email" and rule.email_address:
+                send_alert_email_task.delay(rule.email_address, str(alert.id), str(device.id))
 
         if not browser_sent:
             await alert_event_stream.publish(payload)

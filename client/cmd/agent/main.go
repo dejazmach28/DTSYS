@@ -31,9 +31,13 @@ func main() {
 	configPath := flag.String("config", defaultConfigPath, "Path to agent config file")
 	flag.Parse()
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	})))
+	var wsClient *transport.Client
+	slog.SetDefault(slog.New(&forwardingHandler{
+		base: slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}),
+		client: func() *transport.Client {
+			return wsClient
+		},
+	}))
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -41,6 +45,9 @@ func main() {
 		os.Exit(1)
 	}
 	runtimeCfg := config.NewRuntimeConfig(cfg, *configPath)
+	executor.ConfigureDiagnostics(AgentVersion, func() *config.Config {
+		return runtimeCfg.Config()
+	})
 
 	// Register if not yet registered
 	if cfg.Agent.DeviceID == "" || cfg.Agent.APIKey == "" {
@@ -54,7 +61,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	var wsClient *transport.Client
 	wsClient = transport.NewClient(
 		cfg.Server.URL,
 		cfg.Agent.DeviceID,
@@ -96,6 +102,54 @@ func main() {
 	// Run WebSocket connection (blocks until ctx cancelled)
 	wsClient.Run(ctx)
 	slog.Info("agent stopped")
+}
+
+type forwardingHandler struct {
+	base   slog.Handler
+	client func() *transport.Client
+}
+
+func (h *forwardingHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.base.Enabled(ctx, level)
+}
+
+func (h *forwardingHandler) Handle(ctx context.Context, record slog.Record) error {
+	if err := h.base.Handle(ctx, record); err != nil {
+		return err
+	}
+
+	if record.Level < slog.LevelWarn || h.client == nil {
+		return nil
+	}
+
+	client := h.client()
+	if client == nil || !client.IsConnected() {
+		return nil
+	}
+
+	client.SendEvent(transport.EventData{
+		EventType: "agent_log",
+		Source:    fmt.Sprintf("agent/%s", strings.ToLower(record.Level.String())),
+		Message:   fmt.Sprintf("[%s] %s", strings.ToUpper(record.Level.String()), record.Message),
+		RawData: map[string]interface{}{
+			"level": record.Level.String(),
+		},
+	})
+	return nil
+}
+
+func (h *forwardingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &forwardingHandler{
+		base:   h.base.WithAttrs(attrs),
+		client: h.client,
+	}
+}
+
+func (h *forwardingHandler) WithGroup(name string) slog.Handler {
+	return &forwardingHandler{
+		base:   h.base.WithGroup(name),
+		client: h.client,
+	}
 }
 
 func register(cfg *config.Config, cfgPath string) error {

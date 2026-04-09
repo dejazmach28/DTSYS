@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -13,10 +14,26 @@ import (
 	"time"
 
 	"github.com/dtsys/agent/internal/collector"
+	agentconfig "github.com/dtsys/agent/internal/config"
 	"github.com/dtsys/agent/internal/transport"
+	"github.com/shirou/gopsutil/v3/disk"
 )
 
 const maxOutputBytes = 1 * 1024 * 1024 // 1MB output cap
+
+type DiagnosticsConfigProvider func() *agentconfig.Config
+
+var (
+	diagnosticsVersion  = "0.1.0"
+	diagnosticsConfigFn DiagnosticsConfigProvider
+)
+
+func ConfigureDiagnostics(version string, configFn DiagnosticsConfigProvider) {
+	if version != "" {
+		diagnosticsVersion = version
+	}
+	diagnosticsConfigFn = configFn
+}
 
 // Execute runs a command and returns the result.
 func Execute(ctx context.Context, cmd transport.IncomingCommand, send func(transport.Message)) transport.CommandResultData {
@@ -45,6 +62,8 @@ func Execute(ctx context.Context, cmd transport.IncomingCommand, send func(trans
 		out, exitCode, err = runScreenshot(execCtx, cmd, send)
 	case "request_process_list":
 		out, exitCode, err = runProcessList(execCtx, cmd, send)
+	case "diagnostics":
+		out, exitCode, err = runDiagnostics(execCtx)
 	default:
 		return transport.CommandResultData{
 			CommandID: cmd.CommandID,
@@ -282,4 +301,85 @@ func runProcessList(ctx context.Context, cmd transport.IncomingCommand, send fun
 	}
 
 	return []byte(fmt.Sprintf("reported %d processes", len(processes))), 0, nil
+}
+
+func runDiagnostics(ctx context.Context) ([]byte, int, error) {
+	_ = ctx
+	report := map[string]interface{}{
+		"agent_version": diagnosticsVersion,
+	}
+
+	if osInfo, err := collector.CollectOSInfo(); err == nil {
+		report["os_info"] = map[string]interface{}{
+			"hostname": osInfo.Hostname,
+			"os":       osInfo.OSType,
+			"version":  osInfo.OSVersion,
+			"arch":     osInfo.Arch,
+		}
+	}
+
+	if telemetry, err := collector.CollectTelemetry(); err == nil {
+		report["telemetry"] = telemetry
+	}
+
+	if ifaces, err := collector.CollectNetworkInfo(); err == nil {
+		report["network_interfaces"] = ifaces
+	}
+
+	report["ntp_status"] = collector.CollectNTPStatus()
+
+	if diagnosticsConfigFn != nil {
+		if cfg := diagnosticsConfigFn(); cfg != nil {
+			report["agent_config"] = map[string]interface{}{
+				"telemetry_interval_secs":  cfg.Collect.TelemetryIntervalSecs,
+				"software_scan_interval_m": cfg.Collect.SoftwareScanIntervalM,
+				"event_poll_interval_secs": cfg.Collect.EventPollIntervalSecs,
+				"server_url":               cfg.Server.URL,
+			}
+		}
+	}
+
+	if processes, err := collector.CollectTopProcesses(10); err == nil {
+		report["top_processes"] = processes
+	}
+
+	if events, err := collector.CollectEvents(time.Now().Add(-6 * time.Hour)); err == nil {
+		if len(events) > 5 {
+			events = events[:5]
+		}
+		report["recent_events"] = events
+	}
+
+	if partitions, err := collectPartitions(); err == nil {
+		report["disk_partitions"] = partitions
+	}
+
+	output, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return []byte(err.Error()), 1, err
+	}
+	return output, 0, nil
+}
+
+func collectPartitions() ([]map[string]interface{}, error) {
+	partitions, err := disk.Partitions(false)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]map[string]interface{}, 0, len(partitions))
+	for _, partition := range partitions {
+		entry := map[string]interface{}{
+			"device":     partition.Device,
+			"mountpoint": partition.Mountpoint,
+			"fstype":     partition.Fstype,
+		}
+		if usage, err := disk.Usage(partition.Mountpoint); err == nil {
+			entry["total_gb"] = float64(usage.Total) / 1024 / 1024 / 1024
+			entry["used_gb"] = float64(usage.Used) / 1024 / 1024 / 1024
+			entry["used_percent"] = usage.UsedPercent
+		}
+		results = append(results, entry)
+	}
+	return results, nil
 }

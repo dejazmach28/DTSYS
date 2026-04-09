@@ -19,6 +19,7 @@ class NotificationRuleRequest(BaseModel):
     severity_min: str = "info"
     channel: str
     webhook_url: str | None = None
+    email_address: str | None = None
     is_enabled: bool = True
 
 
@@ -27,6 +28,7 @@ class NotificationRuleUpdateRequest(BaseModel):
     severity_min: str | None = None
     channel: str | None = None
     webhook_url: str | None = None
+    email_address: str | None = None
     is_enabled: bool | None = None
 
 
@@ -78,6 +80,7 @@ def _fmt_rule(rule: NotificationRule) -> dict:
         "severity_min": rule.severity_min,
         "channel": rule.channel,
         "webhook_url": rule.webhook_url,
+        "email_address": rule.email_address,
         "is_enabled": rule.is_enabled,
         "created_at": rule.created_at.isoformat() if rule.created_at else None,
     }

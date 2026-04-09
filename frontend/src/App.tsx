@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import Layout from './components/layout/Layout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -9,6 +9,10 @@ import Reports from './pages/Reports'
 import ScheduledCommands from './pages/ScheduledCommands'
 import Settings from './pages/Settings'
 import SoftwareUpdates from './pages/SoftwareUpdates'
+import Onboarding from './pages/Onboarding'
+import DeviceCompare from './pages/DeviceCompare'
+import NetworkMap from './pages/NetworkMap'
+import { devicesApi } from './api/devices'
 import { useAuthStore } from './store/authStore'
 
 const queryClient = new QueryClient({
@@ -25,12 +29,40 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />
 }
 
+function HomeRoute() {
+  const { role } = useAuthStore()
+  const { data: devices, isLoading } = useQuery({
+    queryKey: ['devices', 'home-route'],
+    queryFn: () => devicesApi.list(),
+    enabled: role === 'admin',
+  })
+
+  if (role === 'admin') {
+    if (isLoading) {
+      return <div className="p-6 text-sm text-slate-500 dark:text-gray-500">Loading dashboard...</div>
+    }
+    if ((devices?.length ?? 0) === 0) {
+      return <Navigate to="/onboarding" replace />
+    }
+  }
+
+  return <Dashboard />
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route
+            path="/onboarding"
+            element={
+              <ProtectedRoute>
+                <Onboarding />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/"
             element={
@@ -39,8 +71,10 @@ export default function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Dashboard />} />
+            <Route index element={<HomeRoute />} />
             <Route path="devices/:id" element={<DeviceDetail />} />
+            <Route path="compare" element={<DeviceCompare />} />
+            <Route path="network-map" element={<NetworkMap />} />
             <Route path="alerts" element={<Alerts />} />
             <Route path="reports" element={<Reports />} />
             <Route path="software-updates" element={<SoftwareUpdates />} />

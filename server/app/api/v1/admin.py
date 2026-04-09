@@ -16,6 +16,7 @@ from app.models.user import User
 from app.dependencies import require_admin
 from app.services.auth_service import AuthService
 from app.services.audit_service import log_action
+from app.tasks.cleanup_tasks import collect_storage_stats, run_cleanup
 from app.websocket.manager import manager
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -140,3 +141,18 @@ async def get_live_connections(
             for entry in snapshot
         ],
     }
+
+
+@router.get("/storage-stats")
+async def get_storage_stats(
+    current_user: Annotated[User, Depends(require_admin)],
+):
+    return await collect_storage_stats()
+
+
+@router.post("/cleanup")
+async def cleanup_now(
+    current_user: Annotated[User, Depends(require_admin)],
+):
+    deleted = await run_cleanup()
+    return {"deleted": deleted}
