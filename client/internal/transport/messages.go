@@ -9,6 +9,7 @@ const (
 	MsgTypeEventReport       = "event_report"
 	MsgTypeNTPStatus         = "ntp_status"
 	MsgTypeNetworkInfo       = "network_info"
+	MsgTypeProcessList       = "process_list"
 	MsgTypeCommandOutput     = "command_output"
 	MsgTypeCommandResult     = "command_result"
 	MsgTypeScreenshotResult  = "screenshot_result"
@@ -27,15 +28,19 @@ type Message struct {
 }
 
 type TelemetryData struct {
-	CPUPercent  float64 `json:"cpu_percent"`
-	RAMPercent  float64 `json:"ram_percent"`
-	DiskPercent float64 `json:"disk_percent"`
-	CPUTemp     float64 `json:"cpu_temp,omitempty"`
-	UptimeSecs  int64   `json:"uptime_secs"`
-	RAMTotalMB  float64 `json:"ram_total_mb"`
-	RAMUsedMB   float64 `json:"ram_used_mb"`
-	DiskTotalGB float64 `json:"disk_total_gb"`
-	DiskUsedGB  float64 `json:"disk_used_gb"`
+	CPUPercent    float64 `json:"cpu_percent"`
+	RAMPercent    float64 `json:"ram_percent"`
+	DiskPercent   float64 `json:"disk_percent"`
+	CPUTemp       float64 `json:"cpu_temp,omitempty"`
+	UptimeSecs    int64   `json:"uptime_secs"`
+	RAMTotalMB    float64 `json:"ram_total_mb"`
+	RAMUsedMB     float64 `json:"ram_used_mb"`
+	DiskTotalGB   float64 `json:"disk_total_gb"`
+	DiskUsedGB    float64 `json:"disk_used_gb"`
+	DiskReadMBps  float64 `json:"disk_read_mbps,omitempty"`
+	DiskWriteMBps float64 `json:"disk_write_mbps,omitempty"`
+	NetSentMBps   float64 `json:"net_sent_mbps,omitempty"`
+	NetRecvMBps   float64 `json:"net_recv_mbps,omitempty"`
 }
 
 type SoftwarePackage struct {
@@ -73,6 +78,18 @@ type NetworkInterface struct {
 
 type NetworkInfoData struct {
 	Interfaces []NetworkInterface `json:"interfaces"`
+}
+
+type ProcessInfo struct {
+	PID        int     `json:"pid"`
+	Name       string  `json:"name"`
+	CPUPercent float64 `json:"cpu_percent"`
+	MemPercent float64 `json:"mem_percent"`
+	Status     string  `json:"status"`
+}
+
+type ProcessListData struct {
+	Processes []ProcessInfo `json:"processes"`
 }
 
 type CommandResultData struct {

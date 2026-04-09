@@ -7,6 +7,7 @@ import { devicesApi } from '../api/devices'
 import { metricsApi } from '../api/metrics'
 import api from '../api/client'
 import type { Metric, SoftwarePackage } from '../types'
+import { exportToCSV, exportToJSON } from '../utils/export'
 
 const ALERT_TYPES = ['offline', 'high_cpu', 'high_ram', 'disk_full', 'crash', 'time_drift']
 
@@ -143,7 +144,15 @@ export default function Reports() {
       </div>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-        <h2 className="mb-4 text-sm font-semibold text-slate-900 dark:text-gray-200">Top Alerts</h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-gray-200">Top Alerts</h2>
+          <button
+            onClick={() => exportToJSON('top-alerts.json', topAlerts)}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 dark:border-gray-700 dark:text-gray-300"
+          >
+            Export JSON
+          </button>
+        </div>
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={topAlerts}>
@@ -161,7 +170,13 @@ export default function Reports() {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-gray-200">Uptime Summary</h2>
           <button
-            onClick={() => exportCSV('uptime-summary.csv', uptimeRows)}
+            onClick={() =>
+              exportToCSV(
+                'uptime-summary.csv',
+                ['Device', 'Avg Uptime %', 'Downtime Hours', 'Last Offline Event'],
+                uptimeRows.map((row) => [row.device, row.avg_uptime_percent, row.downtime_hours, row.last_offline_event])
+              )
+            }
             className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 dark:border-gray-700 dark:text-gray-300"
           >
             Export CSV
@@ -183,7 +198,17 @@ export default function Reports() {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-gray-200">Software Updates Pending</h2>
           <button
-            onClick={() => exportCSV('software-updates.csv', softwareRows)}
+            onClick={() =>
+              exportToCSV(
+                'software-updates.csv',
+                ['Software Name', 'Affected Devices', 'Current Versions Seen'],
+                softwareRows.map((row) => [
+                  row.software_name,
+                  String(row.affected_devices_count),
+                  row.current_versions_seen,
+                ])
+              )
+            }
             className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 dark:border-gray-700 dark:text-gray-300"
           >
             Export CSV
@@ -238,28 +263,4 @@ function DataTable({ headers, rows, emptyLabel }: { headers: string[]; rows: str
       </table>
     </div>
   )
-}
-
-function exportCSV(filename: string, rows: Record<string, unknown>[]) {
-  if (rows.length === 0) {
-    return
-  }
-
-  const headers = Object.keys(rows[0])
-  const csv = [
-    headers.join(','),
-    ...rows.map((row) =>
-      headers
-        .map((header) => JSON.stringify(String(row[header] ?? '')))
-        .join(','),
-    ),
-  ].join('\n')
-
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
 }

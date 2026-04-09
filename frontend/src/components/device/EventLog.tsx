@@ -23,26 +23,26 @@ export default function EventLog({ deviceId }: Props) {
   })
 
   if (events.length === 0) {
-    return <p className="text-gray-600 text-sm">No events recorded.</p>
+    return <p className="text-sm text-slate-500 dark:text-gray-500">No events recorded.</p>
   }
 
   return (
-    <div className="space-y-1 max-h-80 overflow-auto">
+    <div className="max-h-80 space-y-1 overflow-auto">
       {events.map((ev) => (
-        <div key={ev.id} className="flex gap-3 text-xs py-1.5 border-b border-gray-800/60">
-          <span className="text-gray-600 shrink-0 font-mono">
+        <div key={ev.id} className="flex gap-3 border-b border-slate-200 py-1.5 text-xs dark:border-gray-800/60">
+          <span className="shrink-0 font-mono text-slate-400 dark:text-gray-600">
             {format(new Date(ev.time), 'MM-dd HH:mm:ss')}
           </span>
           <span
             className={clsx(
               'px-1.5 rounded text-xs font-medium shrink-0 self-start',
-              typeColor[ev.event_type] ?? 'text-gray-400 bg-gray-400/10'
+              typeColor[ev.event_type] ?? 'bg-slate-200 text-slate-500 dark:bg-gray-400/10 dark:text-gray-400'
             )}
           >
             {ev.event_type.toUpperCase()}
           </span>
-          <span className="text-gray-300 break-all">{ev.message}</span>
-          {ev.source && <span className="text-gray-600 shrink-0">— {ev.source}</span>}
+          <span className="break-all text-slate-700 dark:text-gray-300">{ev.message}</span>
+          {ev.source && <span className="shrink-0 text-slate-400 dark:text-gray-600">- {ev.source}</span>}
         </div>
       ))}
     </div>

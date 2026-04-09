@@ -5,6 +5,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
 import { Link } from 'react-router-dom'
 import { useDevices } from '../hooks/useDevices'
+import { exportToCSV } from '../utils/export'
 
 const severityConfig = {
   critical: { badge: 'bg-red-500/15 text-red-400 border-red-500/30', dot: 'bg-red-500' },
@@ -42,15 +43,35 @@ export default function Alerts() {
           <h1 className="text-xl font-bold text-slate-900 dark:text-gray-100">Alerts</h1>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-gray-500">{alerts.filter((a) => !a.is_resolved).length} unresolved</p>
         </div>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-500 dark:text-gray-400">
-          <input
-            type="checkbox"
-            checked={showResolved}
-            onChange={(e) => setShowResolved(e.target.checked)}
-            className="accent-blue-500"
-          />
-          Show resolved
-        </label>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() =>
+              exportToCSV(
+                'alerts.csv',
+                ['Alert Type', 'Severity', 'Device', 'Message', 'Created At'],
+                alerts.map((alert) => [
+                  alert.alert_type,
+                  alert.severity,
+                  deviceNames[alert.device_id] ?? alert.device_id,
+                  alert.message,
+                  alert.created_at,
+                ])
+              )
+            }
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 dark:border-gray-700 dark:text-gray-300"
+          >
+            Export CSV
+          </button>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-500 dark:text-gray-400">
+            <input
+              type="checkbox"
+              checked={showResolved}
+              onChange={(e) => setShowResolved(e.target.checked)}
+              className="accent-blue-500"
+            />
+            Show resolved
+          </label>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-gray-800 dark:bg-gray-900">

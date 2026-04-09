@@ -43,6 +43,8 @@ func Execute(ctx context.Context, cmd transport.IncomingCommand, send func(trans
 		out, exitCode, err = runSyncTime(execCtx)
 	case "screenshot":
 		out, exitCode, err = runScreenshot(execCtx, cmd, send)
+	case "request_process_list":
+		out, exitCode, err = runProcessList(execCtx, cmd, send)
 	default:
 		return transport.CommandResultData{
 			CommandID: cmd.CommandID,
@@ -264,4 +266,20 @@ func runScreenshot(ctx context.Context, cmd transport.IncomingCommand, send func
 	}
 
 	return []byte("screenshot captured"), 0, nil
+}
+
+func runProcessList(ctx context.Context, cmd transport.IncomingCommand, send func(transport.Message)) ([]byte, int, error) {
+	processes, err := collector.CollectTopProcesses(15)
+	if err != nil {
+		return []byte(err.Error()), 1, err
+	}
+
+	if send != nil {
+		send(transport.Message{
+			Type: transport.MsgTypeProcessList,
+			Data: transport.ProcessListData{Processes: processes},
+		})
+	}
+
+	return []byte(fmt.Sprintf("reported %d processes", len(processes))), 0, nil
 }

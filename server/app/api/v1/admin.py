@@ -1,6 +1,6 @@
-import secrets
 import uuid
 from typing import Annotated
+import secrets
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from redis.asyncio import Redis
@@ -11,10 +11,12 @@ from app.config import get_settings
 from app.core.redis import get_redis
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
+from app.models.device import Device
 from app.models.user import User
 from app.dependencies import require_admin
 from app.services.auth_service import AuthService
 from app.services.audit_service import log_action
+from app.websocket.manager import manager
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -108,4 +110,33 @@ async def get_auth_config(
         "ldap_base_dn": settings.LDAP_BASE_DN,
         "ldap_user_filter": settings.LDAP_USER_FILTER,
         "ldap_admin_group_dn": settings.LDAP_ADMIN_GROUP_DN,
+    }
+
+
+@router.get("/connections")
+async def get_live_connections(
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    snapshot = manager.connection_snapshot()
+    if not snapshot:
+        return {"total": 0, "devices": []}
+
+    device_ids = [entry["device_id"] for entry in snapshot]
+    result = await db.execute(select(Device).where(Device.id.in_(device_ids)))
+    devices = {device.id: device for device in result.scalars().all()}
+
+    return {
+        "total": len(snapshot),
+        "devices": [
+            {
+                "device_id": str(entry["device_id"]),
+                "hostname": (devices.get(entry["device_id"]).label or devices.get(entry["device_id"]).hostname)
+                if devices.get(entry["device_id"])
+                else str(entry["device_id"]),
+                "ip": entry["ip"],
+                "connected_since": entry["connected_since"].isoformat(),
+            }
+            for entry in snapshot
+        ],
     }

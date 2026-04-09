@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from typing import Dict
 from fastapi import WebSocket
 import asyncio
@@ -14,9 +15,10 @@ class ConnectionManager:
     def __init__(self):
         # device_id (UUID) -> WebSocket
         self._connections: Dict[uuid.UUID, WebSocket] = {}
+        self._metadata: Dict[uuid.UUID, dict] = {}
         self._lock = asyncio.Lock()
 
-    async def connect(self, device_id: uuid.UUID, websocket: WebSocket) -> None:
+    async def connect(self, device_id: uuid.UUID, websocket: WebSocket, ip: str | None = None) -> None:
         await websocket.accept()
         async with self._lock:
             if device_id in self._connections:
@@ -27,11 +29,21 @@ class ConnectionManager:
                 except Exception:
                     pass
             self._connections[device_id] = websocket
+            self._metadata[device_id] = {
+                "connected_since": datetime.now(timezone.utc),
+                "ip": ip,
+            }
         log.info("device_connected", device_id=str(device_id), total=len(self._connections))
 
     async def disconnect(self, device_id: uuid.UUID) -> None:
         async with self._lock:
-            self._connections.pop(device_id, None)
+            websocket = self._connections.pop(device_id, None)
+            self._metadata.pop(device_id, None)
+        if websocket is not None:
+            try:
+                await websocket.close(code=1000)
+            except Exception:
+                pass
         log.info("device_disconnected", device_id=str(device_id), total=len(self._connections))
 
     async def send_to_device(self, device_id: uuid.UUID, message: dict) -> bool:
@@ -57,6 +69,18 @@ class ConnectionManager:
     @property
     def connection_count(self) -> int:
         return len(self._connections)
+
+    def connection_snapshot(self) -> list[dict]:
+        snapshot: list[dict] = []
+        for device_id, metadata in self._metadata.items():
+            snapshot.append(
+                {
+                    "device_id": device_id,
+                    "connected_since": metadata["connected_since"],
+                    "ip": metadata.get("ip"),
+                }
+            )
+        return snapshot
 
 
 # Singleton shared across the app lifecycle

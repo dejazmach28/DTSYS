@@ -54,3 +54,18 @@ async def test_refresh_token(client, monkeypatch):
     response = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
     assert response.status_code == 200
     assert response.json()["access_token"]
+
+
+@pytest.mark.asyncio
+async def test_login_rate_limit(client, monkeypatch):
+    async def fake_authenticate(self, username: str, password: str):
+        raise UnauthorizedError("Invalid username or password")
+
+    monkeypatch.setattr(AuthService, "authenticate", fake_authenticate)
+
+    for _ in range(10):
+        response = await client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong-password"})
+        assert response.status_code == 401
+
+    response = await client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong-password"})
+    assert response.status_code == 429

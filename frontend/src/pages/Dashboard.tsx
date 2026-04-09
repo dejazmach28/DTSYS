@@ -10,6 +10,7 @@ import BulkCommandBar from '../components/device/BulkCommandBar'
 import { tagsApi } from '../api/tags'
 import { groupsApi } from '../api/groups'
 import { formatDistanceToNow } from 'date-fns'
+import { exportToCSV } from '../utils/export'
 
 type Filter = 'all' | 'online' | 'offline' | 'alert'
 
@@ -90,6 +91,25 @@ export default function Dashboard() {
         <h1 className="text-xl font-bold text-slate-900 dark:text-gray-100">Dashboard</h1>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-gray-500">Overview of all managed devices</p>
       </div>
+
+      <button
+        onClick={() =>
+          exportToCSV(
+            'devices.csv',
+            ['ID', 'Hostname', 'OS', 'Status', 'Last Seen'],
+            sourceDevices.map((device) => [
+              device.id,
+              device.label ?? device.hostname,
+              device.os_version ?? device.os_type,
+              device.status,
+              device.last_seen ?? '',
+            ])
+          )
+        }
+        className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 dark:border-gray-700 dark:text-gray-300"
+      >
+        Export CSV
+      </button>
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

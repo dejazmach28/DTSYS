@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { ChevronDown, ChevronRight, PackageOpen } from 'lucide-react'
 import { softwareUpdatesApi } from '../api/softwareUpdates'
 import { useDevices } from '../hooks/useDevices'
+import { exportToCSV } from '../utils/export'
 
 export default function SoftwareUpdates() {
   const [searchParams] = useSearchParams()
@@ -69,9 +70,25 @@ export default function SoftwareUpdates() {
         >
           Update Selected
         </button>
+        <button
+          onClick={() =>
+            exportToCSV(
+              'software-updates.csv',
+              ['Package', 'Affected Count', 'Device IDs'],
+              filtered.map((entry) => [
+                entry.software_name,
+                String(entry.affected_count),
+                entry.affected_device_ids.join(' '),
+              ])
+            )
+          }
+          className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 dark:border-gray-700 dark:text-gray-300"
+        >
+          Export CSV
+        </button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
         <table className="min-w-full text-sm">
           <thead className="bg-slate-50 text-left text-slate-500 dark:bg-gray-950/60 dark:text-gray-400">
             <tr>

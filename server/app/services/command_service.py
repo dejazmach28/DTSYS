@@ -11,7 +11,7 @@ from app.core.logging import get_logger
 
 log = get_logger(__name__)
 
-ALLOWED_COMMAND_TYPES = {"shell", "script", "update_check", "reboot", "sync_time"}
+ALLOWED_COMMAND_TYPES = {"shell", "script", "update_check", "reboot", "sync_time", "request_process_list"}
 
 
 class CommandService:

@@ -34,6 +34,10 @@ export interface Metric {
   ram_used_mb: number | null
   disk_total_gb: number | null
   disk_used_gb: number | null
+  disk_read_mbps: number | null
+  disk_write_mbps: number | null
+  net_sent_mbps: number | null
+  net_recv_mbps: number | null
 }
 
 export interface SoftwarePackage {
@@ -178,6 +182,31 @@ export interface ActivityEvent {
   message: string
   source?: string | null
   time: string
+}
+
+export interface ProcessInfo {
+  pid: number
+  name: string
+  cpu_percent: number
+  mem_percent: number
+  status: string
+}
+
+export interface ProcessListResponse {
+  processes: ProcessInfo[]
+  captured_at: string
+}
+
+export interface LiveConnection {
+  device_id: string
+  hostname: string
+  connected_since: string
+  ip: string | null
+}
+
+export interface LiveConnectionsResponse {
+  total: number
+  devices: LiveConnection[]
 }
 
 export interface User {

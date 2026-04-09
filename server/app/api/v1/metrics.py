@@ -41,6 +41,10 @@ async def get_metrics(
             "ram_used_mb": m.ram_used_mb,
             "disk_total_gb": m.disk_total_gb,
             "disk_used_gb": m.disk_used_gb,
+            "disk_read_mbps": m.disk_read_mbps,
+            "disk_write_mbps": m.disk_write_mbps,
+            "net_sent_mbps": m.net_sent_mbps,
+            "net_recv_mbps": m.net_recv_mbps,
         }
         for m in metrics
     ]
@@ -68,4 +72,8 @@ async def get_latest_metric(
         "disk_percent": m.disk_percent,
         "cpu_temp": m.cpu_temp,
         "uptime_secs": m.uptime_secs,
+        "disk_read_mbps": m.disk_read_mbps,
+        "disk_write_mbps": m.disk_write_mbps,
+        "net_sent_mbps": m.net_sent_mbps,
+        "net_recv_mbps": m.net_recv_mbps,
     }

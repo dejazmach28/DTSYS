@@ -7,8 +7,17 @@ import (
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
+	gnet "github.com/shirou/gopsutil/v3/net"
 
 	"github.com/dtsys/agent/internal/transport"
+)
+
+var (
+	prevDiskReadBytes  uint64
+	prevDiskWriteBytes uint64
+	prevNetSentBytes   uint64
+	prevNetRecvBytes   uint64
+	prevSampleTime     time.Time
 )
 
 // CollectTelemetry gathers current hardware metrics.
@@ -66,5 +75,64 @@ func CollectTelemetry() (transport.TelemetryData, error) {
 		}
 	}
 
+	applyThroughputMetrics(&data)
+
 	return data, nil
+}
+
+func applyThroughputMetrics(data *transport.TelemetryData) {
+	now := time.Now()
+	diskReadBytes, diskWriteBytes := collectDiskIOBytes()
+	netSentBytes, netRecvBytes := collectNetworkIOBytes()
+
+	if !prevSampleTime.IsZero() {
+		elapsed := now.Sub(prevSampleTime).Seconds()
+		if elapsed > 0 {
+			data.DiskReadMBps = bytesPerSecondToMBps(deltaUint64(diskReadBytes, prevDiskReadBytes), elapsed)
+			data.DiskWriteMBps = bytesPerSecondToMBps(deltaUint64(diskWriteBytes, prevDiskWriteBytes), elapsed)
+			data.NetSentMBps = bytesPerSecondToMBps(deltaUint64(netSentBytes, prevNetSentBytes), elapsed)
+			data.NetRecvMBps = bytesPerSecondToMBps(deltaUint64(netRecvBytes, prevNetRecvBytes), elapsed)
+		}
+	}
+
+	prevDiskReadBytes = diskReadBytes
+	prevDiskWriteBytes = diskWriteBytes
+	prevNetSentBytes = netSentBytes
+	prevNetRecvBytes = netRecvBytes
+	prevSampleTime = now
+}
+
+func collectDiskIOBytes() (uint64, uint64) {
+	ioCounters, err := disk.IOCounters()
+	if err != nil {
+		return 0, 0
+	}
+
+	var readBytes uint64
+	var writeBytes uint64
+	for _, counter := range ioCounters {
+		readBytes += counter.ReadBytes
+		writeBytes += counter.WriteBytes
+	}
+	return readBytes, writeBytes
+}
+
+func collectNetworkIOBytes() (uint64, uint64) {
+	ioCounters, err := gnet.IOCounters(false)
+	if err != nil || len(ioCounters) == 0 {
+		return 0, 0
+	}
+
+	return ioCounters[0].BytesSent, ioCounters[0].BytesRecv
+}
+
+func deltaUint64(current, previous uint64) uint64 {
+	if current < previous {
+		return 0
+	}
+	return current - previous
+}
+
+func bytesPerSecondToMBps(bytes uint64, seconds float64) float64 {
+	return float64(bytes) / seconds / 1024 / 1024
 }

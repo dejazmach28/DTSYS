@@ -210,6 +210,10 @@ func (c *Client) SendScreenshotResult(data ScreenshotResultData) {
 	c.Send(Message{Type: MsgTypeScreenshotResult, Data: data})
 }
 
+func (c *Client) SendProcessList(processes []ProcessInfo) {
+	c.Send(Message{Type: MsgTypeProcessList, Data: ProcessListData{Processes: processes}})
+}
+
 func buildWSURL(serverURL, deviceID, apiKey string) (string, error) {
 	u, err := url.Parse(serverURL)
 	if err != nil {

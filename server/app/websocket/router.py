@@ -50,7 +50,7 @@ async def device_websocket(
         return
 
     await redis.delete(attempts_key)
-    await manager.connect(device_id, websocket)
+    await manager.connect(device_id, websocket, ip=client_ip)
 
     # Update device status
     await db.execute(

@@ -1,13 +1,13 @@
 import json
 import uuid
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.core.redis import get_redis
+from app.core.redis import check_rate_limit, get_redis
 from app.db.session import get_db
 from app.models.device_config import DeviceConfig
 from app.models.network import DeviceNetworkInfo
@@ -46,9 +46,14 @@ class DeviceConfigRequest(BaseModel):
 @router.post("/register")
 async def register_device(
     body: RegisterRequest,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     redis: Annotated[Redis, Depends(get_redis)],
 ):
+    client_ip = _get_client_ip(request)
+    if not await check_rate_limit(redis, f"rate_limit:register:{client_ip}", limit=5, window_secs=3600):
+        raise HTTPException(status_code=429, detail="Too many registration attempts")
+
     token_key = f"enrollment:{body.enrollment_token}"
     if await redis.get(token_key) is None:
         raise HTTPException(status_code=400, detail="Invalid or expired enrollment token")
@@ -281,9 +286,42 @@ async def get_screenshot(
     return json.loads(payload)
 
 
+@router.get("/{device_id}/processes")
+async def get_device_processes(
+    device_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    redis: Annotated[Redis, Depends(get_redis)],
+):
+    payload = await redis.get(f"process_list:{device_id}")
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Process list not found")
+    return json.loads(payload)
+
+
+@router.post("/{device_id}/disconnect")
+async def disconnect_device(
+    device_id: uuid.UUID,
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    service = DeviceService(db)
+    await service.get_device(device_id)
+    await manager.disconnect(device_id)
+    return {"message": "Disconnected"}
+
+
 def _default_device_config() -> dict:
     return {
         "telemetry_interval_secs": 60,
         "software_scan_interval_m": 60,
         "event_poll_interval_secs": 120,
     }
+
+
+def _get_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return "unknown"

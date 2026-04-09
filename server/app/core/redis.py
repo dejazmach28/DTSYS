@@ -13,3 +13,10 @@ def _redis_client() -> Redis:
 
 async def get_redis() -> Redis:
     return _redis_client()
+
+
+async def check_rate_limit(redis: Redis, key: str, limit: int, window_secs: int) -> bool:
+    current = await redis.incr(key)
+    if current == 1:
+        await redis.expire(key, window_secs)
+    return current <= limit

@@ -7,6 +7,7 @@ settings = get_settings()
 
 def configure_logging() -> None:
     log_level = logging.DEBUG if not settings.is_production else logging.INFO
+    logging.basicConfig(level=log_level)
 
     structlog.configure(
         processors=[
@@ -19,7 +20,7 @@ def configure_logging() -> None:
         ],
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
         context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=structlog.stdlib.LoggerFactory(),
     )
 
 

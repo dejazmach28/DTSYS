@@ -16,7 +16,13 @@ const navItems = [
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({
+  className,
+  onNavigate,
+}: {
+  className?: string
+  onNavigate?: () => void
+}) {
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -38,7 +44,7 @@ export default function Sidebar() {
   })
 
   return (
-    <aside className="flex w-56 flex-col border-r border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+    <aside className={clsx('flex w-56 flex-col border-r border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900', className)}>
       <div className="flex items-center gap-2 border-b border-slate-200 p-4 dark:border-gray-800">
         <Shield className="text-blue-500" size={22} />
         <span className="font-bold text-lg tracking-tight">DTSYS</span>
@@ -50,6 +56,7 @@ export default function Sidebar() {
             key={to}
             to={to}
             end={to === '/'}
+            onClick={onNavigate}
             className={({ isActive }) =>
               clsx(
                 'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
@@ -86,7 +93,10 @@ export default function Sidebar() {
             {groups.map((group) => (
               <button
                 key={group.id}
-                onClick={() => navigate(group.id === activeGroupId ? '/' : `/?group=${group.id}`)}
+                onClick={() => {
+                  navigate(group.id === activeGroupId ? '/' : `/?group=${group.id}`)
+                  onNavigate?.()
+                }}
                 className={clsx(
                   'flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors',
                   group.id === activeGroupId

@@ -13,6 +13,7 @@ import {
   History,
   Plus,
   Camera,
+  Activity,
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { devicesApi } from '../api/devices'
@@ -26,10 +27,11 @@ import SoftwareTable from '../components/device/SoftwareTable'
 import EventLog from '../components/device/EventLog'
 import CommandPanel from '../components/device/CommandPanel'
 import NetworkInfo from '../components/device/NetworkInfo'
+import ProcessList from '../components/device/ProcessList'
 import { formatUptime, lastBootTime } from '../utils/time'
 import { getTagColor } from '../utils/tags'
 
-type Tab = 'overview' | 'software' | 'events' | 'commands' | 'network' | 'config'
+type Tab = 'overview' | 'software' | 'events' | 'commands' | 'network' | 'processes' | 'config'
 
 const DEFAULT_DEVICE_CONFIG = {
   telemetry_interval_secs: 60,
@@ -141,7 +143,7 @@ export default function DeviceDetail() {
     { label: 'Last Boot', value: bootTime ? formatDistanceToNow(bootTime, { addSuffix: true }) : '—', icon: History, warning: false },
   ]
 
-  const tabs: Tab[] = ['overview', 'software', 'events', 'commands', 'network', 'config']
+  const tabs: Tab[] = ['overview', 'software', 'events', 'commands', 'network', 'processes', 'config']
 
   const copyDeviceID = async () => {
     await navigator.clipboard.writeText(device.id)
@@ -198,7 +200,7 @@ export default function DeviceDetail() {
 
       {tab === 'overview' && (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {statCards.map(({ label, value, icon: Icon, warning }) => (
               <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
                 <div className="mb-1 flex items-center justify-between">
@@ -375,6 +377,16 @@ export default function DeviceDetail() {
             <h3 className="text-sm font-medium text-slate-700 dark:text-gray-300">Network Interfaces</h3>
           </div>
           <NetworkInfo deviceId={id!} />
+        </div>
+      )}
+
+      {tab === 'processes' && (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+          <div className="mb-3 flex items-center gap-2">
+            <Activity size={16} className="text-slate-500 dark:text-gray-500" />
+            <h3 className="text-sm font-medium text-slate-700 dark:text-gray-300">Top Processes</h3>
+          </div>
+          <ProcessList deviceId={id!} active={tab === 'processes'} />
         </div>
       )}
 

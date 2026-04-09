@@ -48,14 +48,14 @@ export default function CommandPanel({ deviceId }: Props) {
     <div className="space-y-4">
       {/* Shell input */}
       <div className="flex gap-2">
-        <div className="flex-1 flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
-          <Terminal size={14} className="text-gray-500 shrink-0" />
+        <div className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-gray-700 dark:bg-gray-800">
+          <Terminal size={14} className="shrink-0 text-slate-400 dark:text-gray-500" />
           <input
             value={commandText}
             onChange={(e) => setCommandText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && commandText && dispatch.mutate(commandText)}
             placeholder="Run shell command..."
-            className="flex-1 bg-transparent text-sm text-gray-100 placeholder-gray-600 outline-none font-mono"
+            className="flex-1 bg-transparent font-mono text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-gray-100 dark:placeholder:text-gray-600"
           />
         </div>
         <button
@@ -73,7 +73,7 @@ export default function CommandPanel({ deviceId }: Props) {
           <button
             key={type}
             onClick={() => commandsApi.dispatch(deviceId, type).then(() => qc.invalidateQueries({ queryKey: ['commands', deviceId] }))}
-            className="flex items-center gap-1.5 text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 rounded-lg px-3 py-1.5 transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
           >
             <Icon size={12} />
             {label}
@@ -87,23 +87,23 @@ export default function CommandPanel({ deviceId }: Props) {
           <div
             key={cmd.id}
             onClick={() => setSelectedCmd(selectedCmd?.id === cmd.id ? null : cmd)}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 cursor-pointer hover:border-gray-600"
+            className="cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 hover:border-slate-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600"
           >
             <div className="flex items-center justify-between text-xs">
-              <span className="font-mono text-gray-300">
+              <span className="font-mono text-slate-700 dark:text-gray-300">
                 {cmd.command_type === 'shell'
                   ? (cmd.payload as { command?: string }).command ?? 'shell'
                   : cmd.command_type}
               </span>
               <div className="flex items-center gap-3">
                 <span className={statusColor[cmd.status]}>{cmd.status}</span>
-                <span className="text-gray-600">
+                <span className="text-slate-400 dark:text-gray-600">
                   {formatDistanceToNow(new Date(cmd.created_at), { addSuffix: true })}
                 </span>
               </div>
             </div>
             {selectedCmd?.id === cmd.id && cmd.output && (
-              <pre className="mt-2 text-xs text-gray-400 bg-gray-900 rounded p-2 overflow-auto max-h-40 font-mono whitespace-pre-wrap">
+              <pre className="mt-2 max-h-40 overflow-auto rounded bg-slate-100 p-2 font-mono whitespace-pre-wrap text-xs text-slate-600 dark:bg-gray-950 dark:text-gray-400">
                 {cmd.output}
               </pre>
             )}

@@ -9,6 +9,7 @@ Client -> Server messages:
   - event_report: system event/crash report
   - ntp_status: NTP sync status
   - network_info: network interface info
+  - process_list: latest top process snapshot
   - command_output: streaming output from a running command
   - command_result: final result of a command execution
   - screenshot_result: screenshot capture result
@@ -29,6 +30,7 @@ class ClientMessageType(StrEnum):
     EVENT_REPORT = "event_report"
     NTP_STATUS = "ntp_status"
     NETWORK_INFO = "network_info"
+    PROCESS_LIST = "process_list"
     COMMAND_OUTPUT = "command_output"
     COMMAND_RESULT = "command_result"
     SCREENSHOT_RESULT = "screenshot_result"

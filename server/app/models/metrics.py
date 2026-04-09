@@ -22,3 +22,7 @@ class DeviceMetric(Base):
     ram_used_mb: Mapped[float | None] = mapped_column(Float)
     disk_total_gb: Mapped[float | None] = mapped_column(Float)
     disk_used_gb: Mapped[float | None] = mapped_column(Float)
+    disk_read_mbps: Mapped[float | None] = mapped_column(Float)
+    disk_write_mbps: Mapped[float | None] = mapped_column(Float)
+    net_sent_mbps: Mapped[float | None] = mapped_column(Float)
+    net_recv_mbps: Mapped[float | None] = mapped_column(Float)

@@ -51,35 +51,37 @@ class AlertService:
         return alert
 
     async def evaluate_metrics(self, device: Device, metric: DeviceMetric) -> None:
-        checks = [
-            (
-                metric.cpu_percent is not None and metric.cpu_percent > settings.ALERT_CPU_PERCENT,
+        if metric.cpu_percent is not None and metric.cpu_percent > settings.ALERT_CPU_PERCENT:
+            await self.create_alert(
+                device,
                 "high_cpu",
                 "warning",
                 f"CPU usage {metric.cpu_percent:.1f}% exceeds threshold {settings.ALERT_CPU_PERCENT}%",
-            ),
-            (
-                metric.ram_percent is not None and metric.ram_percent > settings.ALERT_RAM_PERCENT,
+            )
+
+        if metric.ram_percent is not None and metric.ram_percent > settings.ALERT_RAM_PERCENT:
+            await self.create_alert(
+                device,
                 "high_ram",
                 "warning",
                 f"RAM usage {metric.ram_percent:.1f}% exceeds threshold {settings.ALERT_RAM_PERCENT}%",
-            ),
-            (
-                metric.disk_percent is not None and metric.disk_percent > settings.ALERT_DISK_PERCENT,
+            )
+
+        if metric.disk_percent is not None and metric.disk_percent > settings.ALERT_DISK_PERCENT:
+            await self.create_alert(
+                device,
                 "disk_full",
                 "critical",
                 f"Disk usage {metric.disk_percent:.1f}% exceeds threshold {settings.ALERT_DISK_PERCENT}%",
-            ),
-            (
-                metric.cpu_temp is not None and metric.cpu_temp > settings.ALERT_CPU_TEMP_CELSIUS,
+            )
+
+        if metric.cpu_temp is not None and metric.cpu_temp > settings.ALERT_CPU_TEMP_CELSIUS:
+            await self.create_alert(
+                device,
                 "high_temp",
                 "warning",
                 f"CPU temperature {metric.cpu_temp:.1f}°C exceeds threshold {settings.ALERT_CPU_TEMP_CELSIUS}°C",
-            ),
-        ]
-        for triggered, alert_type, severity, message in checks:
-            if triggered:
-                await self.create_alert(device, alert_type, severity, message)
+            )
 
     async def resolve_alert(self, alert_id: uuid.UUID) -> Alert | None:
         from datetime import datetime, timezone

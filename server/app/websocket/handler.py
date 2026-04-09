@@ -44,6 +44,8 @@ class MessageHandler:
                 return await self._handle_ntp(device, payload)
             case ClientMessageType.NETWORK_INFO:
                 return await self._handle_network_info(device, payload)
+            case ClientMessageType.PROCESS_LIST:
+                return await self._handle_process_list(device, payload)
             case ClientMessageType.COMMAND_OUTPUT:
                 return await self._handle_command_output(device, payload)
             case ClientMessageType.COMMAND_RESULT:
@@ -66,6 +68,10 @@ class MessageHandler:
             ram_used_mb=data.get("ram_used_mb"),
             disk_total_gb=data.get("disk_total_gb"),
             disk_used_gb=data.get("disk_used_gb"),
+            disk_read_mbps=data.get("disk_read_mbps"),
+            disk_write_mbps=data.get("disk_write_mbps"),
+            net_sent_mbps=data.get("net_sent_mbps"),
+            net_recv_mbps=data.get("net_recv_mbps"),
         )
         self.db.add(metric)
 
@@ -225,6 +231,15 @@ class MessageHandler:
             "error": data.get("error"),
         }
         await self.redis.setex(f"screenshot:{device.id}", 300, json.dumps(payload))
+
+    async def _handle_process_list(self, device: Device, data: dict) -> None:
+        if self.redis is None:
+            return
+        payload = {
+            "processes": data.get("processes", []),
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await self.redis.setex(f"process_list:{device.id}", 600, json.dumps(payload))
 
 
 def _extract_ip(value: str) -> ipaddress.IPv4Address | None:

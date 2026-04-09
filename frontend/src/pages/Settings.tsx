@@ -4,8 +4,10 @@ import { Copy, Plus, RefreshCw } from 'lucide-react'
 import { format } from 'date-fns'
 import api from '../api/client'
 import { adminApi } from '../api/admin'
+import { devicesApi } from '../api/devices'
 import { notificationRulesApi } from '../api/notificationRules'
 import { useAuthStore } from '../store/authStore'
+import { exportToCSV } from '../utils/export'
 
 export default function Settings() {
   const { role } = useAuthStore()
@@ -37,6 +39,12 @@ export default function Settings() {
     queryFn: adminApi.authConfig,
     enabled: role === 'admin',
   })
+  const { data: connections } = useQuery({
+    queryKey: ['admin-connections'],
+    queryFn: adminApi.connections,
+    enabled: role === 'admin',
+    refetchInterval: 10_000,
+  })
 
   const createRule = useMutation({
     mutationFn: () =>
@@ -55,6 +63,12 @@ export default function Settings() {
       notificationRulesApi.update(id, { is_enabled }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notification-rules'] })
+    },
+  })
+  const disconnectDevice = useMutation({
+    mutationFn: (deviceId: string) => devicesApi.disconnect(deviceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-connections'] })
     },
   })
 
@@ -280,6 +294,56 @@ export default function Settings() {
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-gray-200">Live Connections</h2>
+            <p className="text-xs text-slate-500 dark:text-gray-500">Currently connected agent WebSocket sessions.</p>
+          </div>
+          <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">
+            {connections?.total ?? 0} connected
+          </span>
+        </div>
+        <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-gray-800">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-left text-slate-500 dark:bg-gray-950/60 dark:text-gray-400">
+              <tr>
+                <th className="px-3 py-2">Hostname</th>
+                <th className="px-3 py-2">IP</th>
+                <th className="px-3 py-2">Connected Since</th>
+                <th className="px-3 py-2">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(connections?.devices ?? []).map((connection) => (
+                <tr key={connection.device_id} className="border-t border-slate-200 dark:border-gray-800">
+                  <td className="px-3 py-2 text-slate-900 dark:text-gray-100">{connection.hostname}</td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-gray-300">{connection.ip ?? '—'}</td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-gray-300">
+                    {format(new Date(connection.connected_since), 'PPpp')}
+                  </td>
+                  <td className="px-3 py-2">
+                    <button
+                      onClick={() => disconnectDevice.mutate(connection.device_id)}
+                      className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-600 dark:border-red-500/30 dark:text-red-300"
+                    >
+                      Disconnect
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {(connections?.devices ?? []).length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-3 py-4 text-center text-slate-500 dark:text-gray-500">
+                    No live agent connections.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-gray-200">Audit Log</h2>
@@ -299,6 +363,24 @@ export default function Settings() {
             <option value="scheduled_command_created">scheduled_command_created</option>
             <option value="scheduled_command_deleted">scheduled_command_deleted</option>
           </select>
+          <button
+            onClick={() =>
+              exportToCSV(
+                'audit-log.csv',
+                ['Timestamp', 'User', 'Action', 'Resource', 'Details'],
+                auditLog.map((entry) => [
+                  entry.timestamp ?? '',
+                  entry.username,
+                  entry.action,
+                  entry.resource_type ? `${entry.resource_type}:${entry.resource_id ?? ''}` : '',
+                  entry.details ? JSON.stringify(entry.details) : '',
+                ])
+              )
+            }
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 dark:border-gray-700 dark:text-gray-300"
+          >
+            Export CSV
+          </button>
         </div>
         <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-gray-800">
           <table className="min-w-full text-sm">

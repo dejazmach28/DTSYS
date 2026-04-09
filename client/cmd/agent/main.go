@@ -90,6 +90,7 @@ func main() {
 	go ntpLoop(ctx, wsClient, cfg)
 	go eventLoop(ctx, wsClient, runtimeCfg)
 	go networkLoop(ctx, wsClient)
+	go processLoop(ctx, wsClient)
 	go updateLoop(ctx, cfg)
 
 	// Run WebSocket connection (blocks until ctx cancelled)
@@ -270,6 +271,31 @@ func sendNetwork(client *transport.Client) {
 		Type: transport.MsgTypeNetworkInfo,
 		Data: transport.NetworkInfoData{Interfaces: ifaces},
 	})
+}
+
+func processLoop(ctx context.Context, client *transport.Client) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	sendProcesses(client)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sendProcesses(client)
+		}
+	}
+}
+
+func sendProcesses(client *transport.Client) {
+	processes, err := collector.CollectTopProcesses(15)
+	if err != nil {
+		slog.Warn("process collection failed", "error", err)
+		return
+	}
+
+	client.SendProcessList(processes)
 }
 
 func updateLoop(ctx context.Context, cfg *config.Config) {
