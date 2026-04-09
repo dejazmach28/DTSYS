@@ -1,0 +1,16 @@
+[Unit]
+Description=DTSYS Device Management Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/dtsys-agent --config /etc/dtsys/agent.toml
+Restart=always
+RestartSec=10
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
