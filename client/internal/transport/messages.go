@@ -84,6 +84,12 @@ type CommandOutputData struct {
 	Output    string `json:"output"`
 }
 
+type ConfigUpdateData struct {
+	TelemetryIntervalSecs int `json:"telemetry_interval_secs"`
+	SoftwareScanIntervalM int `json:"software_scan_interval_m"`
+	EventPollIntervalSecs int `json:"event_poll_interval_secs"`
+}
+
 // Incoming from server
 type IncomingCommand struct {
 	CommandID   string                 `json:"command_id"`

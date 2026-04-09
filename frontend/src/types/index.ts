@@ -10,6 +10,7 @@ export interface Device {
   enrolled_at: string
   label: string | null
   notes: string | null
+  tags: string[]
   is_online: boolean
 }
 
@@ -80,6 +81,41 @@ export interface NetworkInterface {
 
 export interface DeviceNetworkResponse {
   interfaces: NetworkInterface[]
+}
+
+export interface DeviceConfig {
+  telemetry_interval_secs: number
+  software_scan_interval_m: number
+  event_poll_interval_secs: number
+}
+
+export interface DeviceConfigResponse {
+  device_id: string
+  config: DeviceConfig
+  updated_at: string | null
+}
+
+export interface ScheduledCommand {
+  id: string
+  device_id: string | null
+  command_type: string
+  payload: Record<string, unknown>
+  cron_expression: string
+  is_enabled: boolean
+  last_run_at: string | null
+  next_run_at: string | null
+  created_by: string | null
+  created_at: string | null
+}
+
+export interface NotificationRule {
+  id: string
+  alert_type: string
+  severity_min: 'info' | 'warning' | 'critical'
+  channel: 'browser' | 'webhook'
+  webhook_url: string | null
+  is_enabled: boolean
+  created_at: string | null
 }
 
 export interface User {

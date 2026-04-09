@@ -14,6 +14,7 @@ import (
 
 // CommandHandler is called when the server sends a command.
 type CommandHandler func(cmd IncomingCommand)
+type ConfigUpdateHandler func(update ConfigUpdateData)
 
 // Client manages the persistent WebSocket connection to the DTSYS server.
 type Client struct {
@@ -21,6 +22,7 @@ type Client struct {
 	deviceID  string
 	apiKey    string
 	onCommand CommandHandler
+	onConfig  ConfigUpdateHandler
 
 	conn   *websocket.Conn
 	mu     sync.Mutex
@@ -29,12 +31,13 @@ type Client struct {
 	sendCh chan Message
 }
 
-func NewClient(serverURL, deviceID, apiKey string, onCommand CommandHandler) *Client {
+func NewClient(serverURL, deviceID, apiKey string, onCommand CommandHandler, onConfig ConfigUpdateHandler) *Client {
 	return &Client{
 		serverURL: serverURL,
 		deviceID:  deviceID,
 		apiKey:    apiKey,
 		onCommand: onCommand,
+		onConfig:  onConfig,
 		sendCh:    make(chan Message, 64),
 	}
 }
@@ -128,6 +131,13 @@ func (c *Client) readLoop(ctx context.Context) {
 			if data, ok := raw["data"]; ok {
 				if err := json.Unmarshal(data, &cmd); err == nil && c.onCommand != nil {
 					go c.onCommand(cmd)
+				}
+			}
+		case MsgTypeConfigUpdate:
+			var update ConfigUpdateData
+			if data, ok := raw["data"]; ok {
+				if err := json.Unmarshal(data, &update); err == nil && c.onConfig != nil {
+					go c.onConfig(update)
 				}
 			}
 		case MsgTypePing:

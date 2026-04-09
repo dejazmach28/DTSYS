@@ -40,6 +40,7 @@ func main() {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
+	runtimeCfg := config.NewRuntimeConfig(cfg, *configPath)
 
 	// Register if not yet registered
 	if cfg.Agent.DeviceID == "" || cfg.Agent.APIKey == "" {
@@ -63,13 +64,29 @@ func main() {
 			result := executor.Execute(ctx, cmd, nil)
 			wsClient.SendCommandResult(result)
 		},
+		func(update transport.ConfigUpdateData) {
+			if err := runtimeCfg.Apply(
+				update.TelemetryIntervalSecs,
+				update.SoftwareScanIntervalM,
+				update.EventPollIntervalSecs,
+			); err != nil {
+				slog.Warn("failed to apply config update", "error", err)
+				return
+			}
+			slog.Info(
+				"config updated",
+				"telemetry_interval_secs", update.TelemetryIntervalSecs,
+				"software_scan_interval_m", update.SoftwareScanIntervalM,
+				"event_poll_interval_secs", update.EventPollIntervalSecs,
+			)
+		},
 	)
 
 	// Start data collection loops
-	go telemetryLoop(ctx, wsClient, cfg)
-	go softwareLoop(ctx, wsClient, cfg)
+	go telemetryLoop(ctx, wsClient, runtimeCfg)
+	go softwareLoop(ctx, wsClient, runtimeCfg)
 	go ntpLoop(ctx, wsClient, cfg)
-	go eventLoop(ctx, wsClient, cfg)
+	go eventLoop(ctx, wsClient, runtimeCfg)
 	go networkLoop(ctx, wsClient)
 	go updateLoop(ctx, cfg)
 
@@ -137,13 +154,15 @@ func buildFingerprint(hostname string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func telemetryLoop(ctx context.Context, client *transport.Client, cfg *config.Config) {
-	ticker := time.NewTicker(time.Duration(cfg.Collect.TelemetryIntervalSecs) * time.Second)
+func telemetryLoop(ctx context.Context, client *transport.Client, runtimeCfg *config.RuntimeConfig) {
+	ticker := time.NewTicker(runtimeCfg.TelemetryInterval())
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case next := <-runtimeCfg.TelemetryUpdates():
+			ticker.Reset(next)
 		case <-ticker.C:
 			data, err := collector.CollectTelemetry()
 			if err != nil {
@@ -155,8 +174,8 @@ func telemetryLoop(ctx context.Context, client *transport.Client, cfg *config.Co
 	}
 }
 
-func softwareLoop(ctx context.Context, client *transport.Client, cfg *config.Config) {
-	ticker := time.NewTicker(time.Duration(cfg.Collect.SoftwareScanIntervalM) * time.Minute)
+func softwareLoop(ctx context.Context, client *transport.Client, runtimeCfg *config.RuntimeConfig) {
+	ticker := time.NewTicker(runtimeCfg.SoftwareInterval())
 	defer ticker.Stop()
 
 	// Send once at startup
@@ -166,6 +185,8 @@ func softwareLoop(ctx context.Context, client *transport.Client, cfg *config.Con
 		select {
 		case <-ctx.Done():
 			return
+		case next := <-runtimeCfg.SoftwareUpdates():
+			ticker.Reset(next)
 		case <-ticker.C:
 			sendSoftware(client)
 		}
@@ -196,8 +217,8 @@ func ntpLoop(ctx context.Context, client *transport.Client, cfg *config.Config) 
 	}
 }
 
-func eventLoop(ctx context.Context, client *transport.Client, cfg *config.Config) {
-	ticker := time.NewTicker(time.Duration(cfg.Collect.EventPollIntervalSecs) * time.Second)
+func eventLoop(ctx context.Context, client *transport.Client, runtimeCfg *config.RuntimeConfig) {
+	ticker := time.NewTicker(runtimeCfg.EventInterval())
 	defer ticker.Stop()
 
 	lastChecked := time.Now().Add(-5 * time.Minute)
@@ -205,6 +226,8 @@ func eventLoop(ctx context.Context, client *transport.Client, cfg *config.Config
 		select {
 		case <-ctx.Done():
 			return
+		case next := <-runtimeCfg.EventUpdates():
+			ticker.Reset(next)
 		case <-ticker.C:
 			events, err := collector.CollectEvents(lastChecked)
 			if err != nil {

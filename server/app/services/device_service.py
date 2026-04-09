@@ -61,8 +61,11 @@ class DeviceService:
         device.status = "offline"
         return device
 
-    async def list_devices(self, skip: int = 0, limit: int = 100) -> list[Device]:
+    async def list_devices(self, skip: int = 0, limit: int = 100, tag: str | None = None) -> list[Device]:
+        query = select(Device).where(~Device.is_revoked)
+        if tag:
+            query = query.where(Device.tags.any(tag))
         result = await self.db.execute(
-            select(Device).where(~Device.is_revoked).offset(skip).limit(limit)
+            query.offset(skip).limit(limit)
         )
         return list(result.scalars().all())

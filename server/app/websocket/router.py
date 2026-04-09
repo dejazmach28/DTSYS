@@ -7,10 +7,12 @@ from datetime import datetime, timezone
 
 from app.core.redis import get_redis
 from app.db.session import get_db
+from app.models.device_config import DeviceConfig
 from app.models.device import Device
 from app.core.security import verify_api_key
 from app.websocket.manager import manager
 from app.websocket.handler import MessageHandler
+from app.websocket.messages import ServerMessageType
 from app.core.logging import get_logger
 
 router = APIRouter()
@@ -57,6 +59,13 @@ async def device_websocket(
         .values(status="online", last_seen=datetime.now(timezone.utc))
     )
     await db.commit()
+
+    config_row = await db.get(DeviceConfig, device_id)
+    if config_row:
+        await manager.send_to_device(
+            device_id,
+            {"type": ServerMessageType.CONFIG_UPDATE, "data": config_row.config},
+        )
 
     handler = MessageHandler(db)
 

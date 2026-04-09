@@ -7,6 +7,7 @@ from app.models.device import Device
 from app.models.metrics import DeviceMetric
 from app.config import get_settings
 from app.core.logging import get_logger
+from app.services.notification_service import NotificationService
 
 log = get_logger(__name__)
 settings = get_settings()
@@ -15,6 +16,7 @@ settings = get_settings()
 class AlertService:
     def __init__(self, db: AsyncSession):
         self.db = db
+        self.notification_service = NotificationService(db)
 
     async def create_alert(
         self,
@@ -43,6 +45,8 @@ class AlertService:
         )
         self.db.add(alert)
         device.status = "alert"
+        await self.db.flush()
+        await self.notification_service.notify(alert, device)
         log.info("alert_created", device_id=str(device.id), type=alert_type, severity=severity)
         return alert
 

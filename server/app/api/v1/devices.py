@@ -8,11 +8,13 @@ from sqlalchemy import select
 
 from app.core.redis import get_redis
 from app.db.session import get_db
+from app.models.device_config import DeviceConfig
 from app.models.network import DeviceNetworkInfo
 from app.models.user import User
 from app.dependencies import get_current_user, require_admin
 from app.services.device_service import DeviceService
 from app.websocket.manager import manager
+from app.websocket.messages import ServerMessageType
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 
@@ -25,6 +27,18 @@ class RegisterRequest(BaseModel):
     fingerprint: str
     ip_address: str | None = None
     enrollment_token: str
+
+
+class UpdateDeviceRequest(BaseModel):
+    label: str | None = None
+    notes: str | None = None
+    tags: list[str] | None = None
+
+
+class DeviceConfigRequest(BaseModel):
+    telemetry_interval_secs: int
+    software_scan_interval_m: int
+    event_poll_interval_secs: int
 
 
 @router.post("/register")
@@ -61,9 +75,10 @@ async def list_devices(
     db: Annotated[AsyncSession, Depends(get_db)],
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    tag: str | None = Query(None),
 ):
     service = DeviceService(db)
-    devices = await service.list_devices(skip=skip, limit=limit)
+    devices = await service.list_devices(skip=skip, limit=limit, tag=tag)
     return [
         {
             "id": str(d.id),
@@ -76,6 +91,8 @@ async def list_devices(
             "last_seen": d.last_seen.isoformat() if d.last_seen else None,
             "enrolled_at": d.enrolled_at.isoformat(),
             "label": d.label,
+            "notes": d.notes,
+            "tags": d.tags or [],
             "is_online": manager.is_connected(d.id),
         }
         for d in devices
@@ -102,6 +119,7 @@ async def get_device(
         "enrolled_at": d.enrolled_at.isoformat(),
         "label": d.label,
         "notes": d.notes,
+        "tags": d.tags or [],
         "is_online": manager.is_connected(d.id),
     }
 
@@ -141,18 +159,71 @@ async def get_device_network(
 @router.patch("/{device_id}")
 async def update_device(
     device_id: uuid.UUID,
-    body: dict,
+    body: UpdateDeviceRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     service = DeviceService(db)
     device = await service.get_device(device_id)
-    if "label" in body:
-        device.label = body["label"]
-    if "notes" in body:
-        device.notes = body["notes"]
+    if body.label is not None:
+        device.label = body.label
+    if body.notes is not None:
+        device.notes = body.notes
+    if body.tags is not None:
+        device.tags = sorted(set(tag.strip() for tag in body.tags if tag.strip()))
     await db.commit()
     return {"message": "Updated"}
+
+
+@router.get("/{device_id}/config")
+async def get_device_config(
+    device_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    service = DeviceService(db)
+    await service.get_device(device_id)
+    config_row = await db.get(DeviceConfig, device_id)
+    config_data = config_row.config if config_row else _default_device_config()
+    return {
+        "device_id": str(device_id),
+        "config": config_data,
+        "updated_at": config_row.updated_at.isoformat() if config_row else None,
+    }
+
+
+@router.post("/{device_id}/config")
+async def update_device_config(
+    device_id: uuid.UUID,
+    body: DeviceConfigRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    service = DeviceService(db)
+    await service.get_device(device_id)
+
+    payload = body.model_dump()
+    config_row = await db.get(DeviceConfig, device_id)
+    if config_row is None:
+        config_row = DeviceConfig(device_id=device_id, config=payload)
+        db.add(config_row)
+    else:
+        config_row.config = payload
+
+    await db.commit()
+
+    sent = False
+    if manager.is_connected(device_id):
+        sent = await manager.send_to_device(
+            device_id,
+            {"type": ServerMessageType.CONFIG_UPDATE, "data": payload},
+        )
+
+    return {
+        "device_id": str(device_id),
+        "config": payload,
+        "sent": sent,
+    }
 
 
 @router.delete("/{device_id}")
@@ -165,3 +236,11 @@ async def revoke_device(
     await service.revoke_device(device_id)
     await db.commit()
     return {"message": "Device revoked"}
+
+
+def _default_device_config() -> dict:
+    return {
+        "telemetry_interval_secs": 60,
+        "software_scan_interval_m": 60,
+        "event_poll_interval_secs": 120,
+    }

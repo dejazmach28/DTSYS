@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 from sqlalchemy import String, Boolean, DateTime, Text, Uuid
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -12,8 +13,10 @@ from app.db.session import Base
 if TYPE_CHECKING:
     from app.models.alert import Alert
     from app.models.command import Command
+    from app.models.device_config import DeviceConfig
     from app.models.event import Event
     from app.models.network import DeviceNetworkInfo
+    from app.models.scheduled_command import ScheduledCommand
     from app.models.software import SoftwareInventory
 
 
@@ -34,9 +37,12 @@ class Device(Base):
     is_revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     label: Mapped[str | None] = mapped_column(String(255))
     notes: Mapped[str | None] = mapped_column(Text)
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
 
     software: Mapped[list[SoftwareInventory]] = relationship(back_populates="device", lazy="select")
     events: Mapped[list[Event]] = relationship(back_populates="device", lazy="select")
     commands: Mapped[list[Command]] = relationship(back_populates="device", lazy="select")
     alerts: Mapped[list[Alert]] = relationship(back_populates="device", lazy="select")
     network_interfaces: Mapped[list[DeviceNetworkInfo]] = relationship(back_populates="device", lazy="select")
+    config: Mapped[DeviceConfig | None] = relationship(back_populates="device", lazy="select", uselist=False)
+    scheduled_commands: Mapped[list[ScheduledCommand]] = relationship(back_populates="device", lazy="select")

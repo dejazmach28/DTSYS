@@ -23,7 +23,7 @@ class CommandService:
         device_id: uuid.UUID,
         command_type: str,
         payload: dict,
-        issued_by: uuid.UUID,
+        issued_by: uuid.UUID | None,
     ) -> Command:
         if command_type not in ALLOWED_COMMAND_TYPES:
             raise BadRequestError(f"Command type must be one of: {ALLOWED_COMMAND_TYPES}")
