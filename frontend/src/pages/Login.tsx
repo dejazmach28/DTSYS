@@ -30,17 +30,17 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gray-950">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 bg-blue-600 rounded-2xl mb-4">
             <Shield size={28} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-100">DTSYS</h1>
-          <p className="text-gray-500 text-sm mt-1">Device Management Platform</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-gray-100">DTSYS</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-gray-500">Device Management Platform</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-lg px-3 py-2">
               {error}
@@ -48,25 +48,25 @@ export default function Login() {
           )}
 
           <div>
-            <label className="block text-xs text-gray-400 mb-1.5">Username</label>
+            <label className="mb-1.5 block text-xs text-slate-500 dark:text-gray-400">Username</label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
               autoFocus
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm outline-none focus:border-blue-500 transition-colors"
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 mb-1.5">Password</label>
+            <label className="mb-1.5 block text-xs text-slate-500 dark:text-gray-400">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 text-sm outline-none focus:border-blue-500 transition-colors"
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition-colors focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
             />
           </div>
 

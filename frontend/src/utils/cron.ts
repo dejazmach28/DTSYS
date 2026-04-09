@@ -66,14 +66,13 @@ export function nextRuns(expr: string, count: number): Date[] {
   const runs: Date[] = []
   const cursor = new Date()
   cursor.setSeconds(0, 0)
+  let attempts = 0
 
-  while (runs.length < count) {
+  while (runs.length < count && attempts < 100000) {
+    attempts += 1
     cursor.setMinutes(cursor.getMinutes() + 1)
     if (matches(expr, cursor)) {
       runs.push(new Date(cursor))
-    }
-    if (runs.length === 0 && count > 0 && runs.length < count && runs.length > 10000) {
-      break
     }
   }
 

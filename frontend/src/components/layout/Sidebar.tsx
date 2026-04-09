@@ -1,11 +1,13 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Bell, Settings, Shield } from 'lucide-react'
+import { LayoutDashboard, Bell, Settings, Shield, BarChart2, Clock3 } from 'lucide-react'
 import { useAlerts } from '../../hooks/useAlerts'
 import { clsx } from 'clsx'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/alerts', icon: Bell, label: 'Alerts' },
+  { to: '/reports', icon: BarChart2, label: 'Reports' },
+  { to: '/scheduled', icon: Clock3, label: 'Scheduled' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
@@ -14,8 +16,8 @@ export default function Sidebar() {
   const unresolvedCount = alerts?.length ?? 0
 
   return (
-    <aside className="w-56 bg-gray-900 border-r border-gray-800 flex flex-col">
-      <div className="p-4 border-b border-gray-800 flex items-center gap-2">
+    <aside className="flex w-56 flex-col border-r border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <div className="flex items-center gap-2 border-b border-slate-200 p-4 dark:border-gray-800">
         <Shield className="text-blue-500" size={22} />
         <span className="font-bold text-lg tracking-tight">DTSYS</span>
       </div>
@@ -31,7 +33,7 @@ export default function Sidebar() {
                 'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
                 isActive
                   ? 'bg-blue-600 text-white'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-gray-100'
+                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'
               )
             }
           >
@@ -46,7 +48,7 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="p-3 border-t border-gray-800 text-xs text-gray-600">
+      <div className="border-t border-slate-200 p-3 text-xs text-slate-500 dark:border-gray-800 dark:text-gray-600">
         DTSYS v0.1.0
       </div>
     </aside>

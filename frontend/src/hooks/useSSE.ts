@@ -56,6 +56,10 @@ export function useSSE(enabled = true) {
             const alert = JSON.parse(dataLine.slice(6)) as Alert
             addAlert(alert)
 
+            if (typeof Notification === 'undefined') {
+              continue
+            }
+
             if (Notification.permission === 'granted') {
               new Notification(`${alert.severity.toUpperCase()}: ${alert.alert_type.replace(/_/g, ' ')}`, {
                 body: alert.message,

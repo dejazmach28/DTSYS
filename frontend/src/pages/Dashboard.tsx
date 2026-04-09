@@ -1,18 +1,22 @@
 import { useEffect, useState } from 'react'
 import { Monitor, AlertTriangle, WifiOff, Wifi } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useDevices } from '../hooks/useDevices'
 import { useAlerts } from '../hooks/useAlerts'
 import DeviceCard from '../components/device/DeviceCard'
 import BulkCommandBar from '../components/device/BulkCommandBar'
+import { tagsApi } from '../api/tags'
 
 type Filter = 'all' | 'online' | 'offline' | 'alert'
 
 export default function Dashboard() {
-  const { data: devices = [], isLoading } = useDevices()
+  const [selectedTag, setSelectedTag] = useState('')
+  const { data: devices = [], isLoading } = useDevices(selectedTag || undefined)
   const { data: alerts = [] } = useAlerts({ resolved: false })
   const [filter, setFilter] = useState<Filter>('all')
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const { data: tags = [] } = useQuery({ queryKey: ['tags'], queryFn: tagsApi.list })
 
   const online = devices.filter((d) => d.status === 'online').length
   const offline = devices.filter((d) => d.status === 'offline').length
@@ -48,16 +52,16 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-gray-100">Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Overview of all managed devices</p>
+        <h1 className="text-xl font-bold text-slate-900 dark:text-gray-100">Dashboard</h1>
+        <p className="mt-0.5 text-sm text-slate-500 dark:text-gray-500">Overview of all managed devices</p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-500">{label}</span>
+              <span className="text-xs text-slate-500 dark:text-gray-500">{label}</span>
               <Icon size={15} className={color} />
             </div>
             <span className={`text-2xl font-bold ${color}`}>{value}</span>
@@ -67,7 +71,7 @@ export default function Dashboard() {
 
       {/* Filters + Search */}
       <div className="flex flex-wrap gap-3 items-center">
-        <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-lg p-1">
+        <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1 dark:border-gray-800 dark:bg-gray-900">
           {(['all', 'online', 'offline', 'alert'] as Filter[]).map((f) => (
             <button
               key={f}
@@ -75,26 +79,36 @@ export default function Dashboard() {
               className={`px-3 py-1 rounded text-xs capitalize transition-colors ${
                 filter === f
                   ? 'bg-blue-600 text-white'
-                  : 'text-gray-400 hover:text-gray-200'
+                  : 'text-slate-500 hover:text-slate-900 dark:text-gray-400 dark:hover:text-gray-200'
               }`}
             >
               {f}
             </button>
           ))}
         </div>
+        <select
+          value={selectedTag}
+          onChange={(event) => setSelectedTag(event.target.value)}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none transition-colors focus:border-blue-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200"
+        >
+          <option value="">All tags</option>
+          {tags.map((tag) => (
+            <option key={tag} value={tag}>{tag}</option>
+          ))}
+        </select>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search hostname, IP..."
-          className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-sm text-gray-200 placeholder-gray-600 outline-none focus:border-blue-600 transition-colors"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-colors focus:border-blue-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200 dark:placeholder-gray-600"
         />
       </div>
 
       {/* Device Grid */}
       {isLoading ? (
-        <div className="text-gray-500 text-sm">Loading devices...</div>
+        <div className="text-sm text-slate-500 dark:text-gray-500">Loading devices...</div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-gray-600">
+        <div className="py-16 text-center text-slate-500 dark:text-gray-600">
           <Monitor size={40} className="mx-auto mb-3 opacity-30" />
           <p>No devices found</p>
         </div>

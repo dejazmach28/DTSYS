@@ -39,10 +39,10 @@ export default function Alerts() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-100">Alerts</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{alerts.filter((a) => !a.is_resolved).length} unresolved</p>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-gray-100">Alerts</h1>
+          <p className="mt-0.5 text-sm text-slate-500 dark:text-gray-500">{alerts.filter((a) => !a.is_resolved).length} unresolved</p>
         </div>
-        <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-500 dark:text-gray-400">
           <input
             type="checkbox"
             checked={showResolved}
@@ -53,14 +53,14 @@ export default function Alerts() {
         </label>
       </div>
 
-      <div className="flex flex-wrap gap-3 rounded-xl border border-gray-800 bg-gray-900 px-4 py-3 text-sm">
+      <div className="flex flex-wrap gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-gray-800 dark:bg-gray-900">
         <span className="font-medium text-red-400">{summary.critical} critical</span>
         <span className="font-medium text-amber-400">{summary.warning} warnings</span>
         <span className="font-medium text-blue-400">{summary.info} info</span>
       </div>
 
       {alerts.length === 0 ? (
-        <div className="text-center py-16 text-gray-600">
+        <div className="py-16 text-center text-slate-500 dark:text-gray-600">
           <AlertTriangle size={40} className="mx-auto mb-3 opacity-30" />
           <p>No alerts</p>
         </div>
@@ -69,7 +69,7 @@ export default function Alerts() {
           {Object.entries(groupedByDevice).map(([deviceId, deviceAlerts]) => (
             <section key={deviceId} className="space-y-2">
               <div className="flex items-center justify-between">
-                <Link to={`/devices/${deviceId}`} className="text-sm font-semibold text-gray-100 hover:text-blue-400">
+                <Link to={`/devices/${deviceId}`} className="text-sm font-semibold text-slate-900 hover:text-blue-500 dark:text-gray-100 dark:hover:text-blue-400">
                   {deviceNames[deviceId] ?? deviceId}
                 </Link>
                 <button
@@ -81,7 +81,7 @@ export default function Alerts() {
                     )
                   }
                   disabled={deviceAlerts.every((alert) => alert.is_resolved) || resolve.isPending}
-                  className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-green-500 hover:text-white disabled:opacity-50"
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600 transition-colors hover:border-green-500 hover:text-slate-900 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:text-white"
                 >
                   Resolve All
                 </button>
@@ -93,8 +93,10 @@ export default function Alerts() {
                   <div
                     key={alert.id}
                     className={clsx(
-                      'bg-gray-900 border rounded-xl px-4 py-3 flex items-start gap-3',
-                      alert.is_resolved ? 'border-gray-800 opacity-50' : 'border-gray-700'
+                      'flex items-start gap-3 rounded-xl border bg-white px-4 py-3 dark:bg-gray-900',
+                      alert.is_resolved
+                        ? 'border-slate-200 opacity-50 dark:border-gray-800'
+                        : 'border-slate-300 dark:border-gray-700',
                     )}
                   >
                     <span className={clsx('w-2 h-2 rounded-full shrink-0 mt-1.5', cfg.dot)} />
@@ -105,19 +107,19 @@ export default function Alerts() {
                         >
                           {alert.severity}
                         </span>
-                        <span className="text-xs text-gray-500 bg-gray-800 px-1.5 py-0.5 rounded">
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500 dark:bg-gray-800 dark:text-gray-500">
                           {alert.alert_type.replace(/_/g, ' ')}
                         </span>
-                        <span className="ml-auto text-xs text-gray-600">
+                        <span className="ml-auto text-xs text-slate-400 dark:text-gray-600">
                           {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}
                         </span>
                       </div>
-                      <p className="mt-1 text-sm text-gray-300">{alert.message}</p>
+                      <p className="mt-1 text-sm text-slate-700 dark:text-gray-300">{alert.message}</p>
                     </div>
                     {!alert.is_resolved && (
                       <button
                         onClick={() => resolve.mutate(alert.id)}
-                        className="shrink-0 text-gray-600 hover:text-green-400 transition-colors"
+                        className="shrink-0 text-slate-400 transition-colors hover:text-green-400 dark:text-gray-600"
                         title="Resolve"
                       >
                         <CheckCircle size={16} />
