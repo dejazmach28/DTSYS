@@ -153,7 +153,7 @@ class MessageHandler:
                 select(Alert).where(
                     Alert.device_id == device.id,
                     Alert.alert_type == "time_drift",
-                    Alert.is_resolved == False,
+                    ~Alert.is_resolved,
                 )
             )
             for alert in result.scalars().all():

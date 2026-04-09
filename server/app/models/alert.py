@@ -1,18 +1,23 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, Boolean, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
+from typing import TYPE_CHECKING
+from sqlalchemy import String, Text, Boolean, DateTime, ForeignKey, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.session import Base
 
+if TYPE_CHECKING:
+    from app.models.device import Device
+
 
 class Alert(Base):
     __tablename__ = "alerts"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), index=True)
     alert_type: Mapped[str] = mapped_column(String(50), nullable=False)
     # crash|outdated_software|time_drift|disk_full|offline|high_cpu|high_ram|high_temp
     severity: Mapped[str] = mapped_column(String(20), nullable=False)  # info|warning|critical
@@ -21,4 +26,4 @@ class Alert(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    device: Mapped["Device"] = relationship(back_populates="alerts")
+    device: Mapped[Device] = relationship(back_populates="alerts")

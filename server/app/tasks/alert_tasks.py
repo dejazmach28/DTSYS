@@ -14,7 +14,7 @@ def check_offline_devices():
 
 
 async def _check_offline_devices_async():
-    from sqlalchemy import update, select
+    from sqlalchemy import select
     from app.db.session import AsyncSessionLocal
     from app.models.device import Device
     from app.models.alert import Alert
@@ -29,7 +29,7 @@ async def _check_offline_devices_async():
             select(Device).where(
                 Device.status == "online",
                 Device.last_seen < threshold,
-                Device.is_revoked == False,
+                ~Device.is_revoked,
             )
         )
         stale_devices = result.scalars().all()
@@ -41,7 +41,7 @@ async def _check_offline_devices_async():
                 select(Alert).where(
                     Alert.device_id == device.id,
                     Alert.alert_type == "offline",
-                    Alert.is_resolved == False,
+                    ~Alert.is_resolved,
                 )
             )
             if not existing.scalar_one_or_none():

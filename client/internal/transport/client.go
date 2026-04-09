@@ -17,10 +17,10 @@ type CommandHandler func(cmd IncomingCommand)
 
 // Client manages the persistent WebSocket connection to the DTSYS server.
 type Client struct {
-	serverURL  string
-	deviceID   string
-	apiKey     string
-	onCommand  CommandHandler
+	serverURL string
+	deviceID  string
+	apiKey    string
+	onCommand CommandHandler
 
 	conn   *websocket.Conn
 	mu     sync.Mutex

@@ -24,7 +24,8 @@ import (
 )
 
 const defaultConfigPath = "/etc/dtsys/agent.toml"
-const AgentVersion = "0.1.0"
+
+var AgentVersion = "0.1.0"
 
 func main() {
 	configPath := flag.String("config", defaultConfigPath, "Path to agent config file")

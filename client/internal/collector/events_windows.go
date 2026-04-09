@@ -13,11 +13,11 @@ import (
 )
 
 type windowsEventRecord struct {
-	TimeCreated     string `json:"TimeCreated"`
-	ProviderName    string `json:"ProviderName"`
-	ID              int    `json:"Id"`
-	LevelDisplay    string `json:"LevelDisplayName"`
-	Message         string `json:"Message"`
+	TimeCreated  string `json:"TimeCreated"`
+	ProviderName string `json:"ProviderName"`
+	ID           int    `json:"Id"`
+	LevelDisplay string `json:"LevelDisplayName"`
+	Message      string `json:"Message"`
 }
 
 // CollectEvents returns recent Windows error and crash events from the Event Log.

@@ -1,23 +1,26 @@
 import uuid
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.user import User
 from app.core.security import decode_token
 from app.core.exceptions import UnauthorizedError, ForbiddenError
 
-bearer_scheme = HTTPBearer()
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
+    if credentials is None:
+        raise UnauthorizedError("Missing bearer token")
+
     try:
         payload = decode_token(credentials.credentials)
     except ValueError:
@@ -30,7 +33,7 @@ async def get_current_user(
     if not user_id:
         raise UnauthorizedError()
 
-    result = await db.execute(select(User).where(User.id == uuid.UUID(user_id), User.is_active == True))
+    result = await db.execute(select(User).where(User.id == uuid.UUID(user_id), User.is_active))
     user = result.scalar_one_or_none()
     if not user:
         raise UnauthorizedError("User not found")

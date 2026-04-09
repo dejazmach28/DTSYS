@@ -1,5 +1,4 @@
 import uuid
-import hashlib
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -64,6 +63,6 @@ class DeviceService:
 
     async def list_devices(self, skip: int = 0, limit: int = 100) -> list[Device]:
         result = await self.db.execute(
-            select(Device).where(Device.is_revoked == False).offset(skip).limit(limit)
+            select(Device).where(~Device.is_revoked).offset(skip).limit(limit)
         )
         return list(result.scalars().all())

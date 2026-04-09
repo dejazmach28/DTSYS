@@ -1,8 +1,7 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Float, BigInteger, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Float, BigInteger, DateTime, ForeignKey, Uuid
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
 from app.db.session import Base
@@ -11,9 +10,9 @@ from app.db.session import Base
 class DeviceMetric(Base):
     __tablename__ = "device_metrics"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     time: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
-    device_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), index=True)
+    device_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), index=True)
     cpu_percent: Mapped[float | None] = mapped_column(Float)
     ram_percent: Mapped[float | None] = mapped_column(Float)
     disk_percent: Mapped[float | None] = mapped_column(Float)

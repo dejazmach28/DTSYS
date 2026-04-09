@@ -1,142 +1,260 @@
-# DTSYS — Device Management System
+# DTSYS
 
-Advanced IT device management platform for managing many endpoints from a single dashboard.
+Device telemetry, remote command execution, alerting, and fleet management for Windows, Linux, and macOS endpoints.
+
+## Prerequisites
+
+| Requirement | Version | Notes |
+|---|---|---|
+| Docker | 24+ | Needed for local PostgreSQL, Redis, and the full stack |
+| Go | 1.22 | Required for the agent build and tests |
+| Node.js | 20 | Required for the frontend build and dev server |
+| Python | 3.12 | Required for the FastAPI server and Alembic |
 
 ## Architecture
 
-| Component | Technology |
-|---|---|
-| Server API | Python 3.12 + FastAPI (async) |
-| Database | PostgreSQL 16 + TimescaleDB |
-| Cache / Queue | Redis 7 + Celery |
-| Frontend | React 18 + TypeScript + Tailwind CSS |
-| Client Agent | Go 1.22 (single binary, all platforms) |
-| Communication | WebSocket (persistent) + REST (registration) |
-| Deployment | Docker Compose |
+```text
+                    +-----------------------+
+                    |      React UI         |
+                    |  Dashboard / Alerts   |
+                    +-----------+-----------+
+                                |
+                                | HTTPS / REST
+                                v
++-------------+        +--------+---------+        +------------------+
+| Go Agent    | <----> | FastAPI API      | <----> | PostgreSQL /     |
+| telemetry   |  WS    | WebSocket broker |        | TimescaleDB      |
+| commands    |        | auth / alerts    |        +------------------+
++-------------+        +--------+---------+                   ^
+                                |                             |
+                                v                             |
+                         +------+-------+                     |
+                         | Redis cache  | <-------------------+
+                         | rate limits  |
+                         | enrollment   |
+                         +--------------+
+```
 
-## Features
+## Development Setup
 
-**Client Agent (Windows / Linux / macOS)**
-- Hardware telemetry: CPU, RAM, disk, temperature, uptime
-- Software inventory with update detection
-- System event log (crashes, errors, warnings)
-- NTP time sync monitoring
-- Runs as system service / daemon
-- Auto-registers on first boot with enrollment token
+1. Install prerequisites:
+```bash
+docker --version
+node --version
+go version
+python3 --version
+```
 
-**Server Dashboard**
-- Real-time device grid (online/offline/alert status)
-- Per-device detail view with 24h performance charts
-- Remote shell command execution
-- Quick actions: check updates, reboot
-- Alert engine: offline, high CPU/RAM/disk/temp, time drift, crashes
-- Software inventory with update badges
-- Event log per device
-- User management (admin/viewer roles)
-- Enrollment token generation for mass deployment
-
-## Quick Start
-
-### 1. Configure environment
-
+2. Create and review environment settings:
 ```bash
 cp .env.example .env
-# Edit .env — set strong passwords and SECRET_KEY
 ```
 
-### 2. Start the stack
-
+3. Start infrastructure:
 ```bash
-docker compose up -d
+docker compose up -d postgres redis
 ```
 
-Dashboard available at `https://localhost` after startup.
-Default credentials: `admin` / value of `FIRST_ADMIN_PASSWORD` in `.env`
-
-### 3. Deploy an agent
-
-In the dashboard: **Settings → Generate Enrollment Token**, then on the target machine:
-
-**Linux (one-liner):**
-```bash
-curl -sSL https://your-server/install.sh | SERVER_URL=https://your-server ENROLLMENT_TOKEN=xxx bash
-```
-
-**Windows (PowerShell, as Administrator):**
-```powershell
-$env:SERVER_URL="https://your-server"; $env:ENROLLMENT_TOKEN="xxx"
-# Download and run the Windows installer from your server
-```
-
-### 4. Build the agent manually
-
-```bash
-cd client
-go mod download
-go build ./cmd/agent/...
-```
-
-Cross-compile for all platforms:
-```bash
-GOOS=linux   GOARCH=amd64  go build -o dist/dtsys-agent-linux-amd64  ./cmd/agent/
-GOOS=windows GOARCH=amd64  go build -o dist/dtsys-agent-windows.exe  ./cmd/agent/
-GOOS=darwin  GOARCH=arm64  go build -o dist/dtsys-agent-darwin-arm64 ./cmd/agent/
-```
-
-## Development
-
-### Server
+4. Install server dependencies:
 ```bash
 cd server
-pip install uv
-uv pip install -e ".[dev]"
-uvicorn app.main:app --reload
+python3 -m pip install --user --break-system-packages uv
+~/.local/bin/uv venv .venv
+~/.local/bin/uv pip install --python .venv/bin/python -e ".[dev]"
 ```
 
-### Frontend
+5. Apply database migrations:
+```bash
+cd server
+.venv/bin/alembic upgrade head
+```
+
+6. Install frontend dependencies:
 ```bash
 cd frontend
 npm install
-npm run dev
 ```
 
-### Client agent (local test)
+7. Build or run the client agent:
 ```bash
 cd client
-go run ./cmd/agent/ --config /path/to/agent.toml
+go mod tidy
+go build ./...
 ```
 
-## Project Structure
-
-```
-DTSYS/
-├── server/           FastAPI backend
-│   └── app/
-│       ├── api/v1/   REST endpoints
-│       ├── websocket/ WebSocket handler + connection manager
-│       ├── models/   SQLAlchemy ORM models
-│       ├── services/ Business logic
-│       └── tasks/    Celery background tasks
-├── client/           Go agent
-│   ├── cmd/agent/    Entry point
-│   └── internal/
-│       ├── collector/ Hardware, software, NTP collectors
-│       ├── transport/ WebSocket client
-│       └── executor/  Remote command execution
-├── frontend/         React dashboard
-│   └── src/
-│       ├── pages/    Dashboard, DeviceDetail, Alerts, Settings
-│       ├── components/
-│       └── hooks/    react-query data hooks
-├── nginx/            Reverse proxy config
-├── scripts/          Deployment helpers
-└── docker-compose.yml
+8. Start the dev services:
+```bash
+make dev-server
+make dev-frontend
+make dev-agent
 ```
 
-## Security Notes
+## Agent Deployment
 
-- Agent API keys stored as bcrypt hashes server-side
-- Agent config is `chmod 600` on Linux/macOS
-- Commands dispatched only over authenticated WebSocket
-- Enrollment tokens are single-use (TODO: Redis expiry enforcement)
-- CORS locked to your domain in production mode
+### Linux
+
+One-line install example:
+```bash
+curl -fsSL https://your-server.example.com/api/v1/downloads/dtsys-agent-linux-amd64 -o /usr/local/bin/dtsys-agent && \
+chmod +x /usr/local/bin/dtsys-agent && \
+mkdir -p /etc/dtsys && \
+cat >/etc/dtsys/agent.toml <<'EOF'
+[server]
+url = "https://your-server.example.com"
+enrollment_token = "REPLACE_ME"
+
+[agent]
+
+[collect]
+telemetry_interval_secs = 60
+software_scan_interval_m = 60
+event_poll_interval_secs = 120
+EOF
+```
+
+Then install the service:
+```bash
+sudo cp client/packaging/linux/dtsys-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now dtsys-agent
+```
+
+### Windows
+
+Run the packaged installer from an elevated PowerShell session:
+```powershell
+Set-ExecutionPolicy Bypass -Scope Process -Force
+.\client\packaging\windows\install.ps1 `
+  -ServerURL "https://your-server.example.com" `
+  -EnrollmentToken "REPLACE_ME"
+```
+
+The installer:
+- Downloads `dtsys-agent-windows.exe`
+- Writes `agent.toml`
+- Installs the service with NSSM
+- Falls back to Chocolatey or a direct NSSM zip download when NSSM is not already present
+
+### macOS
+
+Copy the binary and config:
+```bash
+mkdir -p /usr/local/lib/dtsys /etc/dtsys
+cp dist/agents/dtsys-agent-darwin-arm64 /usr/local/lib/dtsys/dtsys-agent
+chmod +x /usr/local/lib/dtsys/dtsys-agent
+cp client/packaging/macos/com.dtsys.agent.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.dtsys.agent.plist
+```
+
+## Configuration Reference
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_URL` | `postgresql+asyncpg://dtsys:dtsys@localhost:5432/dtsys` | Primary SQL database |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis for enrollment tokens and WS rate limits |
+| `SECRET_KEY` | `dev-secret-key-change-in-production` | JWT signing key |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Access token lifetime |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Refresh token lifetime |
+| `ENROLLMENT_TOKEN_EXPIRE_MINUTES` | `60` | Enrollment token TTL |
+| `ENVIRONMENT` | `development` | Controls startup behavior and docs exposure |
+| `APP_NAME` | `DTSYS` | Service name used in responses |
+| `DEVICE_OFFLINE_THRESHOLD_SECONDS` | `120` | Offline detection threshold |
+| `ALERT_CPU_PERCENT` | `90.0` | CPU usage alert threshold |
+| `ALERT_RAM_PERCENT` | `90.0` | RAM usage alert threshold |
+| `ALERT_DISK_PERCENT` | `90.0` | Disk usage alert threshold |
+| `ALERT_CPU_TEMP_CELSIUS` | `85.0` | CPU temperature alert threshold |
+| `ALERT_NTP_OFFSET_MS` | `500.0` | NTP drift alert threshold |
+| `FIRST_ADMIN_PASSWORD` | `changeme` | Seeded admin password |
+| `AGENT_VERSION` | `0.1.0` | Version served to auto-updating agents |
+| `AGENT_DIST_DIR` | `./dist/agents/` | Directory exposed by `/api/v1/downloads/*` |
+
+## API Quick Reference
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/v1/auth/login` | `POST` | Login and receive access / refresh tokens |
+| `/api/v1/auth/refresh` | `POST` | Refresh access token |
+| `/api/v1/devices/register` | `POST` | Agent registration using enrollment token |
+| `/api/v1/devices` | `GET` | List managed devices |
+| `/api/v1/devices/{id}` | `GET` | Device details |
+| `/api/v1/devices/{id}/network` | `GET` | Latest network interface snapshot |
+| `/api/v1/devices/{id}/commands` | `POST` | Dispatch a command to one device |
+| `/api/v1/commands/bulk` | `POST` | Dispatch a command to many devices |
+| `/api/v1/alerts` | `GET` | Query alerts |
+| `/api/v1/alerts/{id}/resolve` | `POST` | Resolve an alert |
+| `/api/v1/agent/version` | `GET` | Agent update metadata |
+| `/api/v1/downloads/{filename}` | `GET` | Download agent binaries |
+| `/health` | `GET` | App, DB, Redis, and uptime health status |
+
+## Build and Release
+
+Build the frontend:
+```bash
+make build-frontend
+```
+
+Build all agent binaries:
+```bash
+make build-agents
+```
+
+Start the full local stack:
+```bash
+make docker-up
+```
+
+Stop it:
+```bash
+make docker-down
+```
+
+## Testing
+
+Server tests:
+```bash
+make test-server
+```
+
+Client tests:
+```bash
+make test-client
+```
+
+Run migrations:
+```bash
+make migrate
+```
+
+## Troubleshooting
+
+### Agent will not connect
+
+- Verify `server.url` in `agent.toml`
+- Confirm the device can reach `/ws/device/{id}?token=...`
+- Check Redis rate limiting if repeated connection attempts are being rejected with close code `4029`
+
+### Device cannot register
+
+- Ensure the enrollment token exists in Redis and has not been used already
+- Confirm the server can write to PostgreSQL during registration
+- Verify `server.url` points to the API host, not a local-only address
+
+### Alerts are not firing
+
+- Check `/health` for database and Redis status
+- Confirm telemetry messages are arriving over WebSocket
+- Review thresholds in `server/app/config.py`
+
+### Frontend shows stale state
+
+- Rebuild with `make build-frontend`
+- Confirm the browser has a fresh access token
+- Inspect `/api/v1/alerts` and `/api/v1/devices` responses directly
+
+## Contributing
+
+1. Create a feature branch.
+2. Keep changes scoped and run the relevant build/test targets.
+3. Add or update tests for any behavior change.
+4. Run `make lint-server`, `make test-server`, and `make test-client` before opening a PR.
+5. Document any operator-facing change in this README.

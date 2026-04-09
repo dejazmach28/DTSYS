@@ -1,16 +1,22 @@
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.config import get_settings
 from app.core.logging import configure_logging
+from app.core.redis import get_redis
 from app.db.session import engine, Base
 from app.api.v1.router import router as api_router
 from app.websocket.router import router as ws_router
+from app.websocket.manager import manager
 
 settings = get_settings()
 configure_logging()
+APP_VERSION = "0.1.0"
+START_TIME = time.monotonic()
 
 
 @asynccontextmanager
@@ -70,4 +76,28 @@ app.include_router(ws_router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "app": settings.APP_NAME}
+    db_status = "ok"
+    redis_status = "ok"
+
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception:
+        db_status = "error"
+
+    try:
+        redis = await get_redis()
+        await redis.ping()
+    except Exception:
+        redis_status = "error"
+
+    status = "ok" if db_status == "ok" and redis_status == "ok" else "degraded"
+    return {
+        "status": status,
+        "app": settings.APP_NAME,
+        "version": APP_VERSION,
+        "db": db_status,
+        "redis": redis_status,
+        "devices_online": manager.connection_count,
+        "uptime_secs": int(time.monotonic() - START_TIME),
+    }

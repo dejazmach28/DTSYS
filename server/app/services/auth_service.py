@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.models.user import User
 from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token, decode_token
-from app.core.exceptions import UnauthorizedError, NotFoundError
+from app.core.exceptions import UnauthorizedError
 
 
 class AuthService:
@@ -14,7 +14,7 @@ class AuthService:
 
     async def authenticate(self, username: str, password: str) -> User:
         result = await self.db.execute(
-            select(User).where(User.username == username, User.is_active == True)
+            select(User).where(User.username == username, User.is_active)
         )
         user = result.scalar_one_or_none()
         if not user or not verify_password(password, user.password_hash):
@@ -40,7 +40,7 @@ class AuthService:
 
         user_id = payload.get("sub")
         result = await self.db.execute(
-            select(User).where(User.id == uuid.UUID(user_id), User.is_active == True)
+            select(User).where(User.id == uuid.UUID(user_id), User.is_active)
         )
         user = result.scalar_one_or_none()
         if not user:

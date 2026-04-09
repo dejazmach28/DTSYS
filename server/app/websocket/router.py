@@ -1,9 +1,11 @@
 import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from datetime import datetime, timezone
 
+from app.core.redis import get_redis
 from app.db.session import get_db
 from app.models.device import Device
 from app.core.security import verify_api_key
@@ -21,10 +23,22 @@ async def device_websocket(
     websocket: WebSocket,
     token: str = Query(...),
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ):
+    client_ip = websocket.client.host if websocket.client else "unknown"
+    attempts_key = f"ws_attempts:{client_ip}"
+
+    attempts = await redis.incr(attempts_key)
+    if attempts == 1:
+        await redis.expire(attempts_key, 60)
+    if attempts > 10:
+        await websocket.close(code=4029)
+        log.warning("ws_rate_limited", device_id=str(device_id), ip=client_ip, attempts=attempts)
+        return
+
     # Authenticate device
     result = await db.execute(
-        select(Device).where(Device.id == device_id, Device.is_revoked == False)
+        select(Device).where(Device.id == device_id, ~Device.is_revoked)
     )
     device = result.scalar_one_or_none()
 
@@ -33,6 +47,7 @@ async def device_websocket(
         log.warning("ws_auth_failed", device_id=str(device_id))
         return
 
+    await redis.delete(attempts_key)
     await manager.connect(device_id, websocket)
 
     # Update device status

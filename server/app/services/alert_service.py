@@ -28,7 +28,7 @@ class AlertService:
             select(Alert).where(
                 Alert.device_id == device.id,
                 Alert.alert_type == alert_type,
-                Alert.is_resolved == False,
+                ~Alert.is_resolved,
             )
         )
         existing = result.scalar_one_or_none()

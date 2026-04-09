@@ -30,7 +30,7 @@ class CommandService:
 
         # Verify device exists
         result = await self.db.execute(
-            select(Device).where(Device.id == device_id, Device.is_revoked == False)
+            select(Device).where(Device.id == device_id, ~Device.is_revoked)
         )
         device = result.scalar_one_or_none()
         if not device:

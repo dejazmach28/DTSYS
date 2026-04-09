@@ -24,9 +24,9 @@ type AgentConfig struct {
 }
 
 type CollectConfig struct {
-	TelemetryIntervalSecs  int `toml:"telemetry_interval_secs"`  // default 60
-	SoftwareScanIntervalM  int `toml:"software_scan_interval_m"` // default 60 (minutes)
-	EventPollIntervalSecs  int `toml:"event_poll_interval_secs"` // default 120
+	TelemetryIntervalSecs int `toml:"telemetry_interval_secs"`  // default 60
+	SoftwareScanIntervalM int `toml:"software_scan_interval_m"` // default 60 (minutes)
+	EventPollIntervalSecs int `toml:"event_poll_interval_secs"` // default 120
 }
 
 func Load(path string) (*Config, error) {

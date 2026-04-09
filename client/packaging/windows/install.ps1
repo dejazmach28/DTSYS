@@ -52,6 +52,15 @@ function Install-WithNssm {
     }
 
     if (-not (Test-Path $script:nssmExe)) {
+        if (Get-Command choco.exe -ErrorAction SilentlyContinue) {
+            choco install nssm -y --no-progress
+            if (Get-Command nssm.exe -ErrorAction SilentlyContinue) {
+                $script:nssmExe = (Get-Command nssm.exe).Source
+            }
+        }
+    }
+
+    if (-not (Test-Path $script:nssmExe)) {
         $zipPath = Join-Path $env:TEMP "nssm.zip"
         $extractDir = Join-Path $env:TEMP "nssm"
         Invoke-WebRequest -Uri "https://nssm.cc/release/nssm-2.24.zip" -OutFile $zipPath
@@ -94,6 +103,11 @@ Set-Service -Name $serviceName -StartupType Automatic
 Start-Service -Name $serviceName
 
 $service = Get-Service -Name $serviceName
-Write-Host "Service installed."
-Write-Host ("Status: " + $service.Status)
-Write-Host ("InstallDir: " + $InstallDir)
+if ($service.Status -eq 'Running') {
+    Write-Host "DTSYSAgent installed successfully."
+    Write-Host ("Status: " + $service.Status)
+    Write-Host ("InstallDir: " + $InstallDir)
+}
+else {
+    Write-Error ("DTSYSAgent installation finished but service status is " + $service.Status)
+}
