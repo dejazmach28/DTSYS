@@ -12,11 +12,14 @@ import {
   Clock3,
   History,
   Plus,
+  Camera,
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { devicesApi } from '../api/devices'
+import { groupsApi } from '../api/groups'
 import { useDevice, useUpdateDevice } from '../hooks/useDevices'
 import { useLatestMetric, useMetrics } from '../hooks/useMetrics'
+import { useAuthStore } from '../store/authStore'
 import DeviceStatusBadge from '../components/device/DeviceStatusBadge'
 import MetricsChart from '../components/device/MetricsChart'
 import SoftwareTable from '../components/device/SoftwareTable'
@@ -38,10 +41,14 @@ export default function DeviceDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { role } = useAuthStore()
   const [tab, setTab] = useState<Tab>('overview')
   const [copied, setCopied] = useState(false)
   const [newTag, setNewTag] = useState('')
+  const [selectedGroupId, setSelectedGroupId] = useState('')
   const [configForm, setConfigForm] = useState(DEFAULT_DEVICE_CONFIG)
+  const [isCapturing, setIsCapturing] = useState(false)
+  const [captureStartedAt, setCaptureStartedAt] = useState<number | null>(null)
 
   const { data: device, isLoading } = useDevice(id!)
   const updateDevice = useUpdateDevice(id!)
@@ -52,10 +59,42 @@ export default function DeviceDetail() {
     queryFn: () => devicesApi.config(id!),
     enabled: Boolean(id),
   })
+  const { data: groups = [] } = useQuery({
+    queryKey: ['groups'],
+    queryFn: groupsApi.list,
+  })
+  const { data: deviceGroups = [] } = useQuery({
+    queryKey: ['device-groups', id],
+    queryFn: () => groupsApi.deviceGroups(id!),
+    enabled: Boolean(id),
+  })
+  const { data: screenshotData } = useQuery({
+    queryKey: ['device-screenshot', id],
+    queryFn: () => devicesApi.screenshot(id!),
+    enabled: Boolean(id),
+    retry: false,
+    refetchInterval: isCapturing ? 3000 : false,
+  })
   const saveConfig = useMutation({
     mutationFn: () => devicesApi.updateConfig(id!, configForm),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['device-config', id] })
+    },
+  })
+  const addToGroup = useMutation({
+    mutationFn: () => groupsApi.addDevices(selectedGroupId, [id!]),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['device-groups', id] })
+      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      setSelectedGroupId('')
+    },
+  })
+  const requestScreenshot = useMutation({
+    mutationFn: () => devicesApi.requestScreenshot(id!),
+    onSuccess: () => {
+      setCaptureStartedAt(Date.now())
+      setIsCapturing(true)
+      queryClient.invalidateQueries({ queryKey: ['device-screenshot', id] })
     },
   })
 
@@ -65,12 +104,33 @@ export default function DeviceDetail() {
     }
   }, [configData])
 
+  useEffect(() => {
+    if (!isCapturing || !screenshotData?.captured_at) {
+      return
+    }
+
+    const capturedAt = new Date(screenshotData.captured_at).getTime()
+    if (!captureStartedAt || capturedAt >= captureStartedAt) {
+      setIsCapturing(false)
+    }
+  }, [captureStartedAt, isCapturing, screenshotData])
+
+  useEffect(() => {
+    if (!isCapturing) {
+      return undefined
+    }
+
+    const timeout = window.setTimeout(() => setIsCapturing(false), 30_000)
+    return () => window.clearTimeout(timeout)
+  }, [isCapturing])
+
   if (isLoading) return <div className="p-4 text-sm text-slate-500 dark:text-gray-500">Loading...</div>
   if (!device) return <div className="p-4 text-sm text-red-400">Device not found</div>
 
   const latest = latestMetric ?? metrics[0]
   const uptimeSecs = latest?.uptime_secs ?? null
   const bootTime = uptimeSecs != null ? lastBootTime(uptimeSecs) : null
+  const availableGroups = groups.filter((group) => !deviceGroups.some((member) => member.id === group.id))
 
   const statCards = [
     { label: 'CPU', value: latest?.cpu_percent != null ? `${Math.round(latest.cpu_percent)}%` : '—', icon: Cpu, warning: (latest?.cpu_percent ?? 0) > 80 },
@@ -206,6 +266,82 @@ export default function DeviceDetail() {
                   </button>
                 </div>
               </div>
+              <div className="rounded-lg border border-slate-700 bg-slate-950/50 p-3 sm:col-span-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Groups</p>
+                  {deviceGroups.map((group) => (
+                    <span
+                      key={group.id}
+                      className="rounded-full px-2 py-1 text-xs font-medium text-white"
+                      style={{ backgroundColor: group.color }}
+                    >
+                      {group.name}
+                    </span>
+                  ))}
+                  {deviceGroups.length === 0 && <span className="text-sm text-slate-400">No groups assigned</span>}
+                </div>
+                {role === 'admin' && (
+                  <div className="mt-3 flex gap-2">
+                    <select
+                      value={selectedGroupId}
+                      onChange={(event) => setSelectedGroupId(event.target.value)}
+                      className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-blue-500"
+                    >
+                      <option value="">Add to group</option>
+                      {availableGroups.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => addToGroup.mutate()}
+                      disabled={!selectedGroupId || addToGroup.isPending}
+                      className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50"
+                    >
+                      Add
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-slate-700 dark:text-gray-300">Live Screenshot</h3>
+                <p className="text-xs text-slate-500 dark:text-gray-500">Screenshot requires user to be logged in on the device.</p>
+              </div>
+              <button
+                onClick={() => requestScreenshot.mutate()}
+                disabled={requestScreenshot.isPending || isCapturing}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50"
+              >
+                <Camera size={14} />
+                {isCapturing ? 'Capturing...' : 'Request Screenshot'}
+              </button>
+            </div>
+            <div className="overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50 dark:border-gray-700 dark:bg-gray-950/40">
+              {screenshotData?.image_b64 ? (
+                <img
+                  src={`data:image/jpeg;base64,${screenshotData.image_b64}`}
+                  alt={`Screenshot for ${device.hostname}`}
+                  className="max-h-[28rem] w-full object-contain"
+                />
+              ) : (
+                <div className="flex h-64 items-center justify-center text-sm text-slate-500 dark:text-gray-500">
+                  {isCapturing ? 'Capturing screenshot...' : 'No screenshot captured yet'}
+                </div>
+              )}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-gray-500">
+              <span>
+                {screenshotData?.captured_at
+                  ? `Last captured ${formatDistanceToNow(new Date(screenshotData.captured_at), { addSuffix: true })}`
+                  : 'No capture timestamp available'}
+              </span>
+              {screenshotData?.error && <span className="text-red-500">{screenshotData.error}</span>}
             </div>
           </div>
         </div>

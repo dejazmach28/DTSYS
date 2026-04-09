@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.command import Command
 from app.dependencies import get_current_user
+from app.services.audit_service import log_action
 from app.services.command_service import CommandService
 
 router = APIRouter(prefix="/devices/{device_id}/commands", tags=["commands"])
@@ -32,6 +33,14 @@ async def dispatch_command(
         command_type=body.command_type,
         payload=body.payload,
         issued_by=current_user.id,
+    )
+    await log_action(
+        db,
+        current_user,
+        "command_dispatched",
+        resource_type="device",
+        resource_id=str(device_id),
+        details={"command_type": body.command_type},
     )
     await db.commit()
     return {

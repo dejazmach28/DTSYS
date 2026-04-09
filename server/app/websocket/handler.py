@@ -1,5 +1,6 @@
 import uuid
 import ipaddress
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, select, update
@@ -15,6 +16,7 @@ from app.models.event import Event
 from app.websocket.messages import ClientMessageType
 from app.core.logging import get_logger
 from app.services.alert_service import AlertService
+from app.services.activity_stream import activity_event_stream
 
 log = get_logger(__name__)
 
@@ -22,8 +24,9 @@ log = get_logger(__name__)
 class MessageHandler:
     """Processes incoming WebSocket messages from device agents."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, redis=None):
         self.db = db
+        self.redis = redis
         self.alert_service = AlertService(db)
 
     async def handle(self, device: Device, message: dict) -> dict | None:
@@ -45,6 +48,8 @@ class MessageHandler:
                 return await self._handle_command_output(device, payload)
             case ClientMessageType.COMMAND_RESULT:
                 return await self._handle_command_result(device, payload)
+            case ClientMessageType.SCREENSHOT_RESULT:
+                return await self._handle_screenshot_result(device, payload)
             case _:
                 log.warning("unknown_message_type", type=msg_type, device_id=str(device.id))
                 return None
@@ -96,6 +101,17 @@ class MessageHandler:
             raw_data=data.get("raw_data"),
         )
         self.db.add(event)
+        await self.db.flush()
+        await activity_event_stream.publish(
+            {
+                "device_id": str(device.id),
+                "device_hostname": device.label or device.hostname,
+                "event_type": event.event_type,
+                "message": event.message,
+                "source": event.source,
+                "time": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
         if data.get("event_type") == "crash":
             await self.alert_service.create_alert(
@@ -197,6 +213,18 @@ class MessageHandler:
 
         selected_ip = preferred_ip or fallback_ip
         device.ip_address = str(selected_ip) if selected_ip else device.ip_address
+
+    async def _handle_screenshot_result(self, device: Device, data: dict) -> None:
+        if self.redis is None:
+            return
+        payload = {
+            "image_b64": data.get("image_b64"),
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "width": data.get("width"),
+            "height": data.get("height"),
+            "error": data.get("error"),
+        }
+        await self.redis.setex(f"screenshot:{device.id}", 300, json.dumps(payload))
 
 
 def _extract_ip(value: str) -> ipaddress.IPv4Address | None:

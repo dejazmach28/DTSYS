@@ -15,6 +15,9 @@ import (
 // CommandHandler is called when the server sends a command.
 type CommandHandler func(cmd IncomingCommand)
 type ConfigUpdateHandler func(update ConfigUpdateData)
+type ScreenshotRequestData struct {
+	CommandID string `json:"command_id"`
+}
 
 // Client manages the persistent WebSocket connection to the DTSYS server.
 type Client struct {
@@ -133,6 +136,17 @@ func (c *Client) readLoop(ctx context.Context) {
 					go c.onCommand(cmd)
 				}
 			}
+		case MsgTypeScreenshotRequest:
+			var req ScreenshotRequestData
+			if data, ok := raw["data"]; ok {
+				if err := json.Unmarshal(data, &req); err == nil && c.onCommand != nil {
+					go c.onCommand(IncomingCommand{
+						CommandID:   req.CommandID,
+						CommandType: "screenshot",
+						Payload:     map[string]interface{}{},
+					})
+				}
+			}
 		case MsgTypeConfigUpdate:
 			var update ConfigUpdateData
 			if data, ok := raw["data"]; ok {
@@ -190,6 +204,10 @@ func (c *Client) SendNTPStatus(data NTPStatusData) {
 
 func (c *Client) SendCommandResult(data CommandResultData) {
 	c.Send(Message{Type: MsgTypeCommandResult, Data: data})
+}
+
+func (c *Client) SendScreenshotResult(data ScreenshotResultData) {
+	c.Send(Message{Type: MsgTypeScreenshotResult, Data: data})
 }
 
 func buildWSURL(serverURL, deviceID, apiKey string) (string, error) {

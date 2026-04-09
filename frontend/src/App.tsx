@@ -8,6 +8,7 @@ import Alerts from './pages/Alerts'
 import Reports from './pages/Reports'
 import ScheduledCommands from './pages/ScheduledCommands'
 import Settings from './pages/Settings'
+import SoftwareUpdates from './pages/SoftwareUpdates'
 import { useAuthStore } from './store/authStore'
 
 const queryClient = new QueryClient({
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="devices/:id" element={<DeviceDetail />} />
             <Route path="alerts" element={<Alerts />} />
             <Route path="reports" element={<Reports />} />
+            <Route path="software-updates" element={<SoftwareUpdates />} />
             <Route path="scheduled" element={<ScheduledCommands />} />
             <Route path="settings" element={<Settings />} />
           </Route>

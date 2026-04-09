@@ -35,6 +35,17 @@ class Settings(BaseSettings):
     # First admin (used during DB seed only)
     FIRST_ADMIN_PASSWORD: str = "changeme"
 
+    # LDAP / Active Directory
+    LDAP_ENABLED: bool = False
+    LDAP_SERVER: str = ""
+    LDAP_PORT: int = 389
+    LDAP_USE_SSL: bool = False
+    LDAP_BIND_DN: str = ""
+    LDAP_BIND_PASSWORD: str = ""
+    LDAP_BASE_DN: str = ""
+    LDAP_USER_FILTER: str = "(sAMAccountName={username})"
+    LDAP_ADMIN_GROUP_DN: str = ""
+
     @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"

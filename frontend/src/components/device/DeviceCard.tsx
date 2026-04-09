@@ -6,6 +6,7 @@ import { formatDistanceToNow } from 'date-fns'
 import type { Device } from '../../types'
 import DeviceStatusBadge from './DeviceStatusBadge'
 import { alertsApi } from '../../api/alerts'
+import { metricsApi } from '../../api/metrics'
 
 interface Props {
   device: Device
@@ -26,6 +27,13 @@ export default function DeviceCard({ device, selected = false, onToggleSelect }:
     queryFn: () => alertsApi.list({ device_id: device.id, resolved: false }),
     enabled: device.status === 'alert',
     refetchInterval: 30_000,
+  })
+  const { data: cpuMetrics = [] } = useQuery({
+    queryKey: ['metrics', 'sparkline', device.id],
+    queryFn: () => metricsApi.list(device.id, 1),
+    enabled: device.status === 'online',
+    staleTime: 120_000,
+    refetchInterval: 120_000,
   })
 
   return (
@@ -80,6 +88,34 @@ export default function DeviceCard({ device, selected = false, onToggleSelect }:
           </p>
         )}
       </div>
+
+      <div className="mt-4">
+        <p className="mb-1 text-[11px] uppercase tracking-wide text-slate-400 dark:text-gray-600">CPU last hour</p>
+        <CPUSparkline values={cpuMetrics.map((metric) => metric.cpu_percent ?? 0).reverse()} />
+      </div>
     </div>
+  )
+}
+
+function CPUSparkline({ values }: { values: number[] }) {
+  if (values.length === 0) {
+    return <div className="h-10 rounded-lg bg-slate-100 dark:bg-gray-800" />
+  }
+
+  const height = 40
+  const width = 180
+  const step = values.length > 1 ? width / (values.length - 1) : width
+  const path = values
+    .map((value, index) => {
+      const x = index * step
+      const y = height - (Math.max(0, Math.min(100, value)) / 100) * height
+      return `${index === 0 ? 'M' : 'L'} ${x} ${y}`
+    })
+    .join(' ')
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-10 w-full overflow-visible">
+      <path d={path} fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-500" />
+    </svg>
   )
 }

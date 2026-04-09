@@ -61,8 +61,10 @@ func main() {
 		cfg.Agent.APIKey,
 		func(cmd transport.IncomingCommand) {
 			slog.Info("executing command", "type", cmd.CommandType, "id", cmd.CommandID)
-			result := executor.Execute(ctx, cmd, nil)
-			wsClient.SendCommandResult(result)
+			result := executor.Execute(ctx, cmd, wsClient.Send)
+			if cmd.CommandType != "screenshot" {
+				wsClient.SendCommandResult(result)
+			}
 		},
 		func(update transport.ConfigUpdateData) {
 			if err := runtimeCfg.Apply(

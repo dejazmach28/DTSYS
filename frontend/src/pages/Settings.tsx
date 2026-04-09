@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Plus, RefreshCw } from 'lucide-react'
+import { format } from 'date-fns'
 import api from '../api/client'
+import { adminApi } from '../api/admin'
 import { notificationRulesApi } from '../api/notificationRules'
 import { useAuthStore } from '../store/authStore'
 
@@ -15,12 +17,24 @@ export default function Settings() {
     webhook_url: '',
   })
   const [token, setToken] = useState<string | null>(null)
+  const [auditAction, setAuditAction] = useState('')
   const [msg, setMsg] = useState('')
   const queryClient = useQueryClient()
 
   const { data: rules = [] } = useQuery({
     queryKey: ['notification-rules'],
     queryFn: notificationRulesApi.list,
+    enabled: role === 'admin',
+  })
+  const { data: auditLog = [] } = useQuery({
+    queryKey: ['audit-log', auditAction],
+    queryFn: () => adminApi.auditLog({ action: auditAction || undefined, limit: 100 }),
+    enabled: role === 'admin',
+    refetchInterval: 30_000,
+  })
+  const { data: authConfig } = useQuery({
+    queryKey: ['auth-config'],
+    queryFn: adminApi.authConfig,
     enabled: role === 'admin',
   })
 
@@ -232,6 +246,97 @@ export default function Settings() {
         >
           Add Rule
         </button>
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+        <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-gray-200">Authentication</h2>
+        <p className="mb-4 text-xs text-slate-500 dark:text-gray-500">
+          Authentication mode is configured by environment variables on the server.
+        </p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-gray-800 dark:bg-gray-950/40">
+            <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-gray-600">Mode</p>
+            <p className="mt-1 text-sm text-slate-900 dark:text-gray-100">{authConfig?.mode ?? 'Local'}</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-gray-800 dark:bg-gray-950/40">
+            <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-gray-600">LDAP Server</p>
+            <p className="mt-1 text-sm text-slate-900 dark:text-gray-100">
+              {authConfig?.ldap_enabled ? `${authConfig.ldap_server}:${authConfig.ldap_port}` : 'Disabled'}
+            </p>
+          </div>
+          {authConfig?.ldap_enabled && (
+            <>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-gray-800 dark:bg-gray-950/40">
+                <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-gray-600">Base DN</p>
+                <p className="mt-1 text-sm text-slate-900 dark:text-gray-100">{authConfig.ldap_base_dn || '—'}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-gray-800 dark:bg-gray-950/40">
+                <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-gray-600">Admin Group DN</p>
+                <p className="mt-1 text-sm text-slate-900 dark:text-gray-100">{authConfig.ldap_admin_group_dn || '—'}</p>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-gray-200">Audit Log</h2>
+            <p className="text-xs text-slate-500 dark:text-gray-500">Recent administrative and authentication activity.</p>
+          </div>
+          <select
+            value={auditAction}
+            onChange={(event) => setAuditAction(event.target.value)}
+            className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+          >
+            <option value="">All actions</option>
+            <option value="login_success">login_success</option>
+            <option value="login_failed">login_failed</option>
+            <option value="user_created">user_created</option>
+            <option value="device_revoked">device_revoked</option>
+            <option value="command_dispatched">command_dispatched</option>
+            <option value="scheduled_command_created">scheduled_command_created</option>
+            <option value="scheduled_command_deleted">scheduled_command_deleted</option>
+          </select>
+        </div>
+        <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-gray-800">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-left text-slate-500 dark:bg-gray-950/60 dark:text-gray-400">
+              <tr>
+                <th className="px-3 py-2">Timestamp</th>
+                <th className="px-3 py-2">User</th>
+                <th className="px-3 py-2">Action</th>
+                <th className="px-3 py-2">Resource</th>
+                <th className="px-3 py-2">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditLog.map((entry) => (
+                <tr key={entry.id} className="border-t border-slate-200 dark:border-gray-800">
+                  <td className="px-3 py-2 text-slate-600 dark:text-gray-300">
+                    {entry.timestamp ? format(new Date(entry.timestamp), 'PPpp') : '—'}
+                  </td>
+                  <td className="px-3 py-2 text-slate-900 dark:text-gray-100">{entry.username}</td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-gray-300">{entry.action}</td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-gray-300">
+                    {entry.resource_type ? `${entry.resource_type}:${entry.resource_id ?? '—'}` : '—'}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-slate-500 dark:text-gray-500">
+                    {entry.details ? JSON.stringify(entry.details) : '—'}
+                  </td>
+                </tr>
+              ))}
+              {auditLog.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-slate-500 dark:text-gray-500">
+                    No audit entries found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   )

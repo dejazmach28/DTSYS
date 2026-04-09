@@ -1,3 +1,4 @@
+import json
 import uuid
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,6 +13,7 @@ from app.models.device_config import DeviceConfig
 from app.models.network import DeviceNetworkInfo
 from app.models.user import User
 from app.dependencies import get_current_user, require_admin
+from app.services.audit_service import log_action
 from app.services.device_service import DeviceService
 from app.websocket.manager import manager
 from app.websocket.messages import ServerMessageType
@@ -76,9 +78,10 @@ async def list_devices(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     tag: str | None = Query(None),
+    search: str | None = Query(None),
 ):
     service = DeviceService(db)
-    devices = await service.list_devices(skip=skip, limit=limit, tag=tag)
+    devices = await service.list_devices(skip=skip, limit=limit, tag=tag, search=search)
     return [
         {
             "id": str(d.id),
@@ -234,8 +237,48 @@ async def revoke_device(
 ):
     service = DeviceService(db)
     await service.revoke_device(device_id)
+    await log_action(
+        db,
+        current_user,
+        "device_revoked",
+        resource_type="device",
+        resource_id=str(device_id),
+    )
     await db.commit()
     return {"message": "Device revoked"}
+
+
+@router.post("/{device_id}/screenshot/request")
+async def request_screenshot(
+    device_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    service = DeviceService(db)
+    await service.get_device(device_id)
+    if not manager.is_connected(device_id):
+        raise HTTPException(status_code=409, detail="Device is offline")
+
+    await manager.send_to_device(
+        device_id,
+        {
+            "type": ServerMessageType.SCREENSHOT_REQUEST,
+            "data": {"command_id": str(uuid.uuid4())},
+        },
+    )
+    return {"message": "Screenshot requested"}
+
+
+@router.get("/{device_id}/screenshot")
+async def get_screenshot(
+    device_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    redis: Annotated[Redis, Depends(get_redis)],
+):
+    payload = await redis.get(f"screenshot:{device_id}")
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Screenshot not found")
+    return json.loads(payload)
 
 
 def _default_device_config() -> dict:

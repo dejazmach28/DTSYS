@@ -3,12 +3,16 @@ package executor
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"image"
+	_ "image/jpeg"
 	"os/exec"
 	"runtime"
 	"strings"
 	"time"
 
+	"github.com/dtsys/agent/internal/collector"
 	"github.com/dtsys/agent/internal/transport"
 )
 
@@ -37,6 +41,8 @@ func Execute(ctx context.Context, cmd transport.IncomingCommand, send func(trans
 		out, exitCode, err = runUpdateCheck(execCtx)
 	case "sync_time":
 		out, exitCode, err = runSyncTime(execCtx)
+	case "screenshot":
+		out, exitCode, err = runScreenshot(execCtx, cmd, send)
 	default:
 		return transport.CommandResultData{
 			CommandID: cmd.CommandID,
@@ -222,4 +228,40 @@ func compactStrings(values []string) []string {
 		}
 	}
 	return result
+}
+
+func runScreenshot(ctx context.Context, cmd transport.IncomingCommand, send func(transport.Message)) ([]byte, int, error) {
+	imageBytes, err := collector.CaptureScreenshot(ctx)
+	if err != nil {
+		if send != nil {
+			send(transport.Message{
+				Type: transport.MsgTypeScreenshotResult,
+				Data: transport.ScreenshotResultData{
+					CommandID: cmd.CommandID,
+					Error:     err.Error(),
+				},
+			})
+		}
+		return []byte(err.Error()), 1, err
+	}
+
+	width, height := 0, 0
+	if cfg, _, cfgErr := image.DecodeConfig(bytes.NewReader(imageBytes)); cfgErr == nil {
+		width = cfg.Width
+		height = cfg.Height
+	}
+
+	if send != nil {
+		send(transport.Message{
+			Type: transport.MsgTypeScreenshotResult,
+			Data: transport.ScreenshotResultData{
+				CommandID: cmd.CommandID,
+				ImageB64:  base64.StdEncoding.EncodeToString(imageBytes),
+				Width:     width,
+				Height:    height,
+			},
+		})
+	}
+
+	return []byte("screenshot captured"), 0, nil
 }

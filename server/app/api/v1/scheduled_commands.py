@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.dependencies import require_admin
 from app.models.scheduled_command import ScheduledCommand
 from app.models.user import User
+from app.services.audit_service import log_action
 
 router = APIRouter(prefix="/scheduled-commands", tags=["scheduled-commands"])
 
@@ -60,6 +61,15 @@ async def create_scheduled_command(
         created_by=current_user.id,
     )
     db.add(scheduled)
+    await db.flush()
+    await log_action(
+        db,
+        current_user,
+        "scheduled_command_created",
+        resource_type="scheduled_command",
+        resource_id=str(scheduled.id),
+        details={"command_type": body.command_type, "device_id": str(body.device_id) if body.device_id else None},
+    )
     await db.commit()
     await db.refresh(scheduled)
     return _fmt_scheduled_command(scheduled)
@@ -99,7 +109,15 @@ async def delete_scheduled_command(
     scheduled = await db.get(ScheduledCommand, scheduled_command_id)
     if scheduled is None:
         return {"detail": "Scheduled command not found"}
+    scheduled_id = str(scheduled.id)
     await db.delete(scheduled)
+    await log_action(
+        db,
+        current_user,
+        "scheduled_command_deleted",
+        resource_type="scheduled_command",
+        resource_id=scheduled_id,
+    )
     await db.commit()
     return {"message": "Deleted"}
 

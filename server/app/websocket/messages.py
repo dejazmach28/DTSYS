@@ -11,10 +11,12 @@ Client -> Server messages:
   - network_info: network interface info
   - command_output: streaming output from a running command
   - command_result: final result of a command execution
+  - screenshot_result: screenshot capture result
 
 Server -> Client messages:
   - command: execute a command on the device
   - config_update: update agent configuration
+  - screenshot_request: capture screenshot
   - ping: keep-alive ping
 """
 
@@ -29,10 +31,12 @@ class ClientMessageType(StrEnum):
     NETWORK_INFO = "network_info"
     COMMAND_OUTPUT = "command_output"
     COMMAND_RESULT = "command_result"
+    SCREENSHOT_RESULT = "screenshot_result"
 
 
 class ServerMessageType(StrEnum):
     COMMAND = "command"
     CONFIG_UPDATE = "config_update"
+    SCREENSHOT_REQUEST = "screenshot_request"
     PING = "ping"
     ACK = "ack"

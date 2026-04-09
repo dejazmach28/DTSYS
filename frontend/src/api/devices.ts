@@ -1,10 +1,24 @@
 import api from './client'
-import type { Device, DeviceConfig, DeviceConfigResponse, DeviceNetworkResponse } from '../types'
+import type {
+  Device,
+  DeviceConfig,
+  DeviceConfigResponse,
+  DeviceNetworkResponse,
+  ScreenshotResponse,
+} from '../types'
 
 export const devicesApi = {
-  list: (tag?: string) => api.get<Device[]>('/devices', { params: tag ? { tag } : undefined }).then((r) => r.data),
+  list: (tag?: string, search?: string) =>
+    api.get<Device[]>('/devices', {
+      params: {
+        ...(tag ? { tag } : {}),
+        ...(search ? { search } : {}),
+      },
+    }).then((r) => r.data),
   get: (id: string) => api.get<Device>(`/devices/${id}`).then((r) => r.data),
   network: (id: string) => api.get<DeviceNetworkResponse>(`/devices/${id}/network`).then((r) => r.data),
+  screenshot: (id: string) => api.get<ScreenshotResponse>(`/devices/${id}/screenshot`).then((r) => r.data),
+  requestScreenshot: (id: string) => api.post(`/devices/${id}/screenshot/request`).then((r) => r.data),
   config: (id: string) => api.get<DeviceConfigResponse>(`/devices/${id}/config`).then((r) => r.data),
   updateConfig: (id: string, config: DeviceConfig) =>
     api.post(`/devices/${id}/config`, config).then((r) => r.data),

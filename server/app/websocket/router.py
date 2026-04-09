@@ -67,7 +67,7 @@ async def device_websocket(
             {"type": ServerMessageType.CONFIG_UPDATE, "data": config_row.config},
         )
 
-    handler = MessageHandler(db)
+    handler = MessageHandler(db, redis)
 
     try:
         while True:

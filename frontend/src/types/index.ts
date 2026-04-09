@@ -14,6 +14,15 @@ export interface Device {
   is_online: boolean
 }
 
+export interface DeviceGroup {
+  id: string
+  name: string
+  description: string | null
+  color: string
+  member_count?: number
+  created_at?: string | null
+}
+
 export interface Metric {
   time: string
   cpu_percent: number | null
@@ -116,6 +125,59 @@ export interface NotificationRule {
   webhook_url: string | null
   is_enabled: boolean
   created_at: string | null
+}
+
+export interface AuditLogEntry {
+  id: string
+  timestamp: string | null
+  user_id: string | null
+  username: string
+  action: string
+  resource_type: string | null
+  resource_id: string | null
+  ip_address: string | null
+  details: Record<string, unknown> | null
+}
+
+export interface AuthConfig {
+  mode: 'Local' | 'LDAP'
+  ldap_enabled: boolean
+  ldap_server: string
+  ldap_port: number
+  ldap_use_ssl: boolean
+  ldap_base_dn: string
+  ldap_user_filter: string
+  ldap_admin_group_dn: string
+}
+
+export interface PendingSoftwareUpdate {
+  software_name: string
+  current_versions: string[]
+  affected_device_ids: string[]
+  affected_count: number
+}
+
+export interface SoftwareSearchResult {
+  name: string
+  device_count: number
+  versions: string[]
+}
+
+export interface ScreenshotResponse {
+  image_b64: string | null
+  captured_at: string | null
+  width?: number | null
+  height?: number | null
+  error?: string | null
+}
+
+export interface ActivityEvent {
+  device_id: string
+  device_hostname: string
+  event_type: 'crash' | 'error' | 'warning' | 'info'
+  message: string
+  source?: string | null
+  time: string
 }
 
 export interface User {

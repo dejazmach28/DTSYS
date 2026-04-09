@@ -11,12 +11,14 @@ const (
 	MsgTypeNetworkInfo       = "network_info"
 	MsgTypeCommandOutput     = "command_output"
 	MsgTypeCommandResult     = "command_result"
+	MsgTypeScreenshotResult  = "screenshot_result"
 
 	// Server -> Client
-	MsgTypeCommand      = "command"
-	MsgTypeConfigUpdate = "config_update"
-	MsgTypePing         = "ping"
-	MsgTypeAck          = "ack"
+	MsgTypeCommand           = "command"
+	MsgTypeConfigUpdate      = "config_update"
+	MsgTypeScreenshotRequest = "screenshot_request"
+	MsgTypePing              = "ping"
+	MsgTypeAck               = "ack"
 )
 
 type Message struct {
@@ -82,6 +84,14 @@ type CommandResultData struct {
 type CommandOutputData struct {
 	CommandID string `json:"command_id"`
 	Output    string `json:"output"`
+}
+
+type ScreenshotResultData struct {
+	CommandID string `json:"command_id"`
+	ImageB64  string `json:"image_b64,omitempty"`
+	Width     int    `json:"width,omitempty"`
+	Height    int    `json:"height,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 type ConfigUpdateData struct {

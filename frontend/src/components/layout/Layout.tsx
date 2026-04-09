@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
+import GlobalSearch from '../ui/GlobalSearch'
 
 export default function Layout() {
   return (
@@ -12,6 +13,7 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+      <GlobalSearch />
     </div>
   )
 }

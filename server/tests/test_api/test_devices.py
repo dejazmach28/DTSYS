@@ -15,7 +15,13 @@ async def test_list_devices_requires_auth(client):
 
 @pytest.mark.asyncio
 async def test_list_devices_empty(client, admin_token, monkeypatch):
-    async def fake_list_devices(self, skip: int = 0, limit: int = 100, tag: str | None = None):
+    async def fake_list_devices(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        tag: str | None = None,
+        search: str | None = None,
+    ):
         return []
 
     async def override_current_user():

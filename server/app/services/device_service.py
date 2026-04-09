@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.models.device import Device
 from app.core.security import generate_api_key, hash_api_key
@@ -61,10 +61,25 @@ class DeviceService:
         device.status = "offline"
         return device
 
-    async def list_devices(self, skip: int = 0, limit: int = 100, tag: str | None = None) -> list[Device]:
+    async def list_devices(
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        tag: str | None = None,
+        search: str | None = None,
+    ) -> list[Device]:
         query = select(Device).where(~Device.is_revoked)
         if tag:
             query = query.where(Device.tags.any(tag))
+        if search:
+            search_term = f"%{search}%"
+            query = query.where(
+                or_(
+                    Device.hostname.ilike(search_term),
+                    Device.label.ilike(search_term),
+                    Device.ip_address.ilike(search_term),
+                )
+            )
         result = await self.db.execute(
             query.offset(skip).limit(limit)
         )

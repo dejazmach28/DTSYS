@@ -1,15 +1,17 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, LogOut, Moon, Sun, User } from 'lucide-react'
+import { Bell, LogOut, Moon, Search, Sun, User } from 'lucide-react'
 import { useAlerts } from '../../hooks/useAlerts'
 import { useSSE } from '../../hooks/useSSE'
 import { useAlertStore } from '../../store/alertStore'
 import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
+import { useGlobalSearchStore } from '../../store/globalSearchStore'
 
 export default function Topbar() {
   const { username, role, logout } = useAuthStore()
   const { theme, toggle } = useThemeStore()
+  const openSearch = useGlobalSearchStore((state) => state.openSearch)
   const navigate = useNavigate()
   const { data: unresolvedAlerts = [] } = useAlerts({ resolved: false })
   const unresolved = useAlertStore((state) => state.unresolved)
@@ -27,7 +29,17 @@ export default function Topbar() {
   }
 
   return (
-    <header className="flex h-12 items-center justify-end gap-3 border-b border-slate-200 bg-white px-6 dark:border-gray-800 dark:bg-gray-900">
+    <header className="flex h-12 items-center justify-between gap-3 border-b border-slate-200 bg-white px-6 dark:border-gray-800 dark:bg-gray-900">
+      <button
+        onClick={openSearch}
+        className="flex min-w-[15rem] items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-slate-500 transition-colors hover:border-blue-300 hover:text-slate-900 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400 dark:hover:border-blue-700 dark:hover:text-gray-100"
+      >
+        <Search size={14} />
+        <span className="flex-1 text-left">Search devices, software</span>
+        <span className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] dark:border-gray-700">Ctrl K</span>
+      </button>
+
+      <div className="flex items-center gap-3">
       <button
         onClick={() => navigate('/alerts')}
         className="relative rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
@@ -59,6 +71,7 @@ export default function Topbar() {
         <LogOut size={14} />
         Logout
       </button>
+      </div>
     </header>
   )
 }
