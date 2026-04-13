@@ -10,7 +10,16 @@ interface AlertState {
 
 export const useAlertStore = create<AlertState>((set) => ({
   unresolved: [],
-  setUnresolved: (alerts) => set({ unresolved: alerts }),
+  setUnresolved: (alerts) =>
+    set((state) => {
+      if (state.unresolved.length === alerts.length) {
+        const sameIds = state.unresolved.every((existing, index) => existing.id === alerts[index]?.id)
+        if (sameIds) {
+          return state
+        }
+      }
+      return { unresolved: alerts }
+    }),
   addAlert: (alert) =>
     set((state) => ({
       unresolved: [alert, ...state.unresolved.filter((existing) => existing.id !== alert.id)],

@@ -29,9 +29,12 @@ type Client struct {
 
 	conn   *websocket.Conn
 	mu     sync.Mutex
+	writeMu sync.Mutex
 	closed bool
 
-	sendCh chan Message
+	sendCh    chan Message
+	writeStop chan struct{}
+	writeDone chan struct{}
 }
 
 func NewClient(serverURL, deviceID, apiKey string, onCommand CommandHandler, onConfig ConfigUpdateHandler) *Client {
@@ -56,6 +59,7 @@ func (c *Client) Run(ctx context.Context) {
 		default:
 		}
 
+		startedAt := time.Now()
 		if err := c.connect(ctx); err != nil {
 			slog.Error("websocket connect failed", "error", err)
 			wait := backoff.next()
@@ -68,11 +72,23 @@ func (c *Client) Run(ctx context.Context) {
 			continue
 		}
 
-		backoff.reset()
 		c.readLoop(ctx)
+		c.drainSendCh()
 
 		if ctx.Err() != nil {
 			return
+		}
+
+		if time.Since(startedAt) > 30*time.Second {
+			backoff.reset()
+		}
+
+		wait := backoff.next()
+		slog.Info("reconnecting", "in", wait)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
 		}
 	}
 }
@@ -91,6 +107,8 @@ func (c *Client) connect(ctx context.Context) error {
 
 	c.mu.Lock()
 	c.conn = conn
+	c.writeStop = make(chan struct{})
+	c.writeDone = make(chan struct{})
 	c.mu.Unlock()
 
 	slog.Info("connected to server", "url", wsURL)
@@ -104,16 +122,40 @@ func (c *Client) connect(ctx context.Context) error {
 func (c *Client) readLoop(ctx context.Context) {
 	defer func() {
 		c.mu.Lock()
-		if c.conn != nil {
-			c.conn.Close()
-			c.conn = nil
-		}
+		conn := c.conn
+		stop := c.writeStop
+		c.conn = nil
+		c.writeStop = nil
 		c.mu.Unlock()
+		if stop != nil {
+			close(stop)
+		}
+		if conn != nil {
+			conn.Close()
+		}
+		if c.writeDone != nil {
+			<-c.writeDone
+		}
 	}()
+
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	if conn == nil {
+		return
+	}
+
+	// Keepalive settings.
+	const pongWait = 60 * time.Second
+	conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
 
 	for {
 		var raw map[string]json.RawMessage
-		err := c.conn.ReadJSON(&raw)
+		err := conn.ReadJSON(&raw)
 		if err != nil {
 			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				slog.Warn("websocket read error", "error", err)
@@ -163,16 +205,47 @@ func (c *Client) readLoop(ctx context.Context) {
 }
 
 func (c *Client) writePump() {
-	for msg := range c.sendCh {
-		c.mu.Lock()
-		conn := c.conn
-		c.mu.Unlock()
-		if conn == nil {
-			break
+	defer func() {
+		if c.writeDone != nil {
+			close(c.writeDone)
 		}
-		if err := conn.WriteJSON(msg); err != nil {
-			slog.Warn("write error", "error", err)
-			break
+	}()
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.writeStop:
+			return
+		case <-ticker.C:
+			c.mu.Lock()
+			conn := c.conn
+			c.mu.Unlock()
+			if conn == nil {
+				return
+			}
+			c.writeMu.Lock()
+			err := conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(10*time.Second))
+			c.writeMu.Unlock()
+			if err != nil {
+				slog.Warn("ping error", "error", err)
+				return
+			}
+		case msg := <-c.sendCh:
+			c.mu.Lock()
+			conn := c.conn
+			c.mu.Unlock()
+			if conn == nil {
+				return
+			}
+			c.writeMu.Lock()
+			err := conn.WriteJSON(msg)
+			c.writeMu.Unlock()
+			if err != nil {
+				slog.Warn("write error", "error", err)
+				return
+			}
 		}
 	}
 }
@@ -222,6 +295,16 @@ func (c *Client) IsConnected() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.conn != nil
+}
+
+func (c *Client) drainSendCh() {
+	for {
+		select {
+		case <-c.sendCh:
+		default:
+			return
+		}
+	}
 }
 
 func buildWSURL(serverURL, deviceID, apiKey string) (string, error) {

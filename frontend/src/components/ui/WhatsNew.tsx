@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { APP_VERSION } from '../../version'
 
+const STORAGE_KEY = 'dtsys-whats-new-v0.1.0'
+
 const highlights = [
   '🖥️ Multi-platform agent (Windows, Linux, macOS)',
   '📊 Real-time hardware monitoring',
@@ -15,14 +17,14 @@ const highlights = [
 ]
 
 export default function WhatsNew() {
-  const [open, setOpen] = useState(() => localStorage.getItem('dtsys-last-seen-version') !== APP_VERSION)
+  const [open, setOpen] = useState(() => localStorage.getItem(STORAGE_KEY) !== APP_VERSION)
 
   if (!open) {
     return null
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
       <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-gray-800 dark:bg-gray-900">
         <h2 className="text-xl font-semibold text-slate-900 dark:text-gray-100">What&apos;s New in v{APP_VERSION}</h2>
         <div className="mt-4 space-y-2 text-sm text-slate-600 dark:text-gray-300">
@@ -34,7 +36,7 @@ export default function WhatsNew() {
         </div>
         <button
           onClick={() => {
-            localStorage.setItem('dtsys-last-seen-version', APP_VERSION)
+            localStorage.setItem(STORAGE_KEY, APP_VERSION)
             setOpen(false)
           }}
           className="mt-5 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-500"

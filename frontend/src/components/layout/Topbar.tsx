@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bell, LogOut, Menu, Moon, Search, Sun, User } from 'lucide-react'
 import { useAlerts } from '../../hooks/useAlerts'
@@ -21,9 +21,16 @@ export default function Topbar() {
 
   useSSE(Boolean(username))
 
+  const syncUnresolved = useCallback(
+    (alerts: typeof unresolvedAlerts) => {
+      setUnresolved(alerts)
+    },
+    [setUnresolved]
+  )
+
   useEffect(() => {
-    setUnresolved(unresolvedAlerts)
-  }, [setUnresolved, unresolvedAlerts])
+    syncUnresolved(unresolvedAlerts)
+  }, [syncUnresolved, unresolvedAlerts])
 
   const handleLogout = () => {
     logout()

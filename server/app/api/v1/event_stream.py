@@ -4,29 +4,27 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from redis.asyncio import Redis
-
-from app.core.redis import get_redis
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.services.event_stream import alert_event_stream
 
 router = APIRouter(prefix="/events", tags=["events-stream"])
+MAX_SSE_CONNECTIONS = 10
+_connection_counts: dict[str, int] = {}
+_connection_lock = asyncio.Lock()
 
 
 @router.get("/stream")
 async def stream_alerts(
     request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
-    redis: Annotated[Redis, Depends(get_redis)],
 ):
-    connection_key = f"sse_connections:{current_user.id}"
-    connection_count = await redis.incr(connection_key)
-    if connection_count == 1:
-        await redis.expire(connection_key, 3600)
-    if connection_count > 3:
-        await redis.decr(connection_key)
-        raise HTTPException(status_code=429, detail="Too many open event streams")
+    user_key = str(current_user.id)
+    async with _connection_lock:
+        current = _connection_counts.get(user_key, 0)
+        if current >= MAX_SSE_CONNECTIONS:
+            raise HTTPException(status_code=429, detail="Too many open event streams")
+        _connection_counts[user_key] = current + 1
 
     queue = await alert_event_stream.subscribe()
 
@@ -42,9 +40,12 @@ async def stream_alerts(
                     yield ": keep-alive\n\n"
         finally:
             await alert_event_stream.unsubscribe(queue)
-            remaining = await redis.decr(connection_key)
-            if remaining <= 0:
-                await redis.delete(connection_key)
+            async with _connection_lock:
+                remaining = _connection_counts.get(user_key, 0) - 1
+                if remaining <= 0:
+                    _connection_counts.pop(user_key, None)
+                else:
+                    _connection_counts[user_key] = remaining
 
     return StreamingResponse(
         generator(),
