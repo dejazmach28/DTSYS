@@ -7,10 +7,12 @@ import pytest_asyncio
 from fakeredis.aioredis import FakeRedis
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.sql import operators
+from sqlalchemy.sql.dml import Update
 from sqlalchemy.sql.elements import BinaryExpression, BindParameter, BooleanClauseList, ColumnElement, UnaryExpression
 
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
+from app.core.rate_limit import limiter
 from app.db.session import get_db
 from app.main import app
 from app.models.alert import Alert
@@ -72,6 +74,25 @@ class DummySession:
         }
 
     async def execute(self, statement):
+        if isinstance(statement, Update):
+            rows = list(self._rows_for_statement(statement))
+            if not rows:
+                table = getattr(statement, "table", None)
+                model = TABLE_MODELS.get(getattr(table, "name", ""), None)
+                if model is not None:
+                    rows = list(self._store.get(model, []))
+            for criterion in getattr(statement, "_where_criteria", ()):
+                rows = [row for row in rows if _matches(row, criterion)]
+            values = {}
+            for key, value in getattr(statement, "_values", {}).items():
+                attr = _extract_key(key)
+                if attr:
+                    values[attr] = _extract_value(value)
+            for row in rows:
+                for attr, value in values.items():
+                    setattr(row, attr, value)
+            return DummyResult(rows)
+
         rows = list(self._rows_for_statement(statement))
 
         for criterion in getattr(statement, "_where_criteria", ()):
@@ -247,6 +268,18 @@ async def fake_redis() -> AsyncIterator[FakeRedis]:
 @pytest_asyncio.fixture
 async def db_session() -> AsyncIterator[DummySession]:
     yield DummySession()
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter() -> None:
+    """Reset SlowAPI in-memory counter between tests."""
+    storage = getattr(limiter, "_storage", None)
+    if storage is None:
+        return
+    for attr in ("_storage", "storage"):
+        bucket = getattr(storage, attr, None)
+        if isinstance(bucket, dict):
+            bucket.clear()
 
 
 @pytest_asyncio.fixture

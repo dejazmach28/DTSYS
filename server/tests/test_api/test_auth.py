@@ -63,7 +63,7 @@ async def test_login_rate_limit(client, monkeypatch):
 
     monkeypatch.setattr(AuthService, "authenticate", fake_authenticate)
 
-    for _ in range(10):
+    for _ in range(9):
         response = await client.post("/api/v1/auth/login", json={"username": "admin", "password": "wrong-password"})
         assert response.status_code == 401
 

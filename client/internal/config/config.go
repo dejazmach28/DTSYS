@@ -11,6 +11,7 @@ type Config struct {
 	Server  ServerConfig  `toml:"server"`
 	Agent   AgentConfig   `toml:"agent"`
 	Collect CollectConfig `toml:"collect"`
+	Events  EventsConfig  `toml:"events"`
 }
 
 type ServerConfig struct {
@@ -29,12 +30,25 @@ type CollectConfig struct {
 	EventPollIntervalSecs int `toml:"event_poll_interval_secs"` // default 120
 }
 
+type EventsConfig struct {
+	DedupMaxEntries  int      `toml:"dedup_max_entries"`   // default 50
+	ExcludePatterns  []string `toml:"exclude_patterns"`    // default includes docker EOF noise
+	RateLimitMax     int      `toml:"rate_limit_max"`      // default 20
+	RateLimitWindowS int      `toml:"rate_limit_window_s"` // default 30
+}
+
 func Load(path string) (*Config, error) {
 	cfg := &Config{
 		Collect: CollectConfig{
 			TelemetryIntervalSecs: 60,
 			SoftwareScanIntervalM: 60,
 			EventPollIntervalSecs: 120,
+		},
+		Events: EventsConfig{
+			DedupMaxEntries:  50,
+			ExcludePatterns:  []string{"event handler.*EOF", "event streamer.*EOF"},
+			RateLimitMax:     20,
+			RateLimitWindowS: 30,
 		},
 	}
 

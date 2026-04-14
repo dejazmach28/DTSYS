@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.redis import check_rate_limit, get_redis
 from app.db.session import get_db
 from app.core.exceptions import UnauthorizedError
+from app.core.rate_limit import limiter
 from app.services.auth_service import AuthService
 from app.services.audit_service import log_action
 
@@ -23,6 +24,7 @@ class RefreshRequest(BaseModel):
 
 
 @router.post("/login")
+@limiter.limit("10/minute")
 async def login(
     body: LoginRequest,
     request: Request,

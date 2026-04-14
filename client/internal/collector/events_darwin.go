@@ -51,6 +51,9 @@ func CollectEvents(since time.Time) ([]transport.EventData, error) {
 			if err != nil {
 				continue
 			}
+			if shouldSkipEvent(event.Source, event.Message) {
+				continue
+			}
 			events = append(events, event)
 		}
 	}

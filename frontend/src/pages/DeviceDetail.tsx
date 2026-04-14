@@ -448,7 +448,7 @@ export default function DeviceDetail() {
             />
           ) : (
             <div className="flex h-64 items-center justify-center text-sm text-slate-500 dark:text-gray-500">
-              {isCapturing ? 'Capturing screenshot...' : 'No screenshot captured yet'}
+              {isCapturing ? 'Capturing screenshot...' : 'No screenshot yet — click Request Screenshot'}
             </div>
           )}
         </div>
@@ -456,7 +456,9 @@ export default function DeviceDetail() {
           <span>
             {screenshotData?.captured_at
               ? `Last captured ${formatDistanceToNow(new Date(screenshotData.captured_at), { addSuffix: true })}`
-              : 'No capture timestamp available'}
+              : isCapturing
+                ? 'Waiting for capture...'
+                : 'No capture yet'}
           </span>
           {screenshotData?.error && <span className="text-red-500">{screenshotData.error}</span>}
         </div>

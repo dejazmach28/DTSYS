@@ -2,33 +2,30 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.config import get_settings
 
 settings = get_settings()
-# Use a pure-passlib scheme to avoid runtime bcrypt backend incompatibilities
-# across local/dev environments.
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 ALGORITHM = "HS256"
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 def hash_api_key(key: str) -> str:
-    return pwd_context.hash(key)
+    return bcrypt.hashpw(key.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_api_key(key: str, hashed: str) -> bool:
-    return pwd_context.verify(key, hashed)
+    return bcrypt.checkpw(key.encode(), hashed.encode())
 
 
 def generate_api_key() -> str:

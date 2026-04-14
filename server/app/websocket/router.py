@@ -1,14 +1,16 @@
+import asyncio
 import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.core.redis import get_redis
-from app.db.session import get_db
+from app.db.session import AsyncSessionLocal, get_db
 from app.models.device_config import DeviceConfig
 from app.models.device import Device
+from app.models.command import Command
 from app.models.uptime_event import UptimeEvent
 from app.core.security import verify_api_key
 from app.websocket.manager import manager
@@ -18,6 +20,42 @@ from app.core.logging import get_logger
 
 router = APIRouter()
 log = get_logger(__name__)
+_pending_offline: dict[uuid.UUID, asyncio.Task] = {}
+_pending_lock = asyncio.Lock()
+
+
+async def _ping_loop(websocket: WebSocket, device_id: uuid.UUID, interval: int = 30) -> None:
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await websocket.send_json({"type": "ping"})
+        except Exception as exc:
+            log.info("ws_ping_failed", device_id=str(device_id), error=str(exc))
+            break
+
+
+async def _schedule_offline(device_id: uuid.UUID) -> None:
+    try:
+        await asyncio.sleep(15)
+        if manager.is_connected(device_id):
+            return
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                update(Device).where(Device.id == device_id).values(status="offline")
+            )
+            await session.commit()
+    except asyncio.CancelledError:
+        return
+    finally:
+        async with _pending_lock:
+            _pending_offline.pop(device_id, None)
+
+
+async def _cancel_pending_offline(device_id: uuid.UUID) -> None:
+    async with _pending_lock:
+        task = _pending_offline.pop(device_id, None)
+    if task:
+        task.cancel()
 
 
 @router.websocket("/ws/device/{device_id}")
@@ -51,7 +89,9 @@ async def device_websocket(
         return
 
     await redis.delete(attempts_key)
+    await websocket.accept()
     await manager.connect(device_id, websocket, ip=client_ip)
+    await _cancel_pending_offline(device_id)
 
     # Update device status
     now = datetime.now(timezone.utc)
@@ -75,12 +115,36 @@ async def device_websocket(
 
     config_row = await db.get(DeviceConfig, device_id)
     if config_row:
+        try:
+            await manager.send_to_device(
+                device_id,
+                {"type": ServerMessageType.CONFIG_UPDATE, "data": config_row.config},
+            )
+        except Exception as exc:
+            log.warning("config_send_failed", device_id=str(device_id), error=str(exc))
+
+    pending_cmds = await db.execute(
+        select(Command).where(
+            Command.device_id == device_id,
+            Command.status == "sent",
+            Command.created_at >= datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+    )
+    for cmd in pending_cmds.scalars().all():
         await manager.send_to_device(
             device_id,
-            {"type": ServerMessageType.CONFIG_UPDATE, "data": config_row.config},
+            {
+                "type": ServerMessageType.COMMAND,
+                "data": {
+                    "command_id": str(cmd.id),
+                    "command_type": cmd.command_type,
+                    "payload": cmd.payload,
+                },
+            },
         )
 
     handler = MessageHandler(db, redis)
+    ping_task = asyncio.create_task(_ping_loop(websocket, device_id))
 
     try:
         while True:
@@ -88,13 +152,13 @@ async def device_websocket(
             await handler.handle(device, message)
             await db.commit()
             await websocket.send_json({"type": "ack"})
-    except WebSocketDisconnect:
-        pass
+    except WebSocketDisconnect as e:
+        log.info("ws_disconnect", device_id=str(device_id), code=e.code, reason=e.reason)
     except Exception as e:
-        log.error("ws_error", device_id=str(device_id), error=str(e))
+        log.error("ws_error", device_id=str(device_id), error=str(e), type=type(e).__name__)
     finally:
+        ping_task.cancel()
         await manager.disconnect(device_id)
-        await db.execute(
-            update(Device).where(Device.id == device_id).values(status="offline")
-        )
-        await db.commit()
+        async with _pending_lock:
+            if device_id not in _pending_offline:
+                _pending_offline[device_id] = asyncio.create_task(_schedule_offline(device_id))

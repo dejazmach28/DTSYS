@@ -14,5 +14,5 @@ async def get_agent_version(
     base_url = str(request.base_url).rstrip("/")
     return {
         "version": VERSION,
-        "download_url": f"{base_url}/api/v1/downloads/dtsys-agent-{platform}-{arch}",
+        "download_url": f"{base_url}/api/v1/agent/download?arch={arch}&platform={platform}",
     }

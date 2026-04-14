@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	_ "image/jpeg"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +36,7 @@ func ConfigureDiagnostics(version string, configFn DiagnosticsConfigProvider) {
 
 // Execute runs a command and returns the result.
 func Execute(ctx context.Context, cmd transport.IncomingCommand, send func(transport.Message)) transport.CommandResultData {
+	slog.Info("executing command", "type", cmd.CommandType, "id", cmd.CommandID)
 	timeout := 60 * time.Second
 	if t, ok := cmd.Payload["timeout_secs"].(float64); ok && t > 0 && t <= 300 {
 		timeout = time.Duration(t) * time.Second
@@ -81,11 +83,13 @@ func Execute(ctx context.Context, cmd transport.IncomingCommand, send func(trans
 		output = output[:maxOutputBytes] + "\n[output truncated]"
 	}
 
-	return transport.CommandResultData{
+	result := transport.CommandResultData{
 		CommandID: cmd.CommandID,
 		ExitCode:  exitCode,
 		Output:    output,
 	}
+	slog.Info("command_result", "id", result.CommandID, "exit_code", result.ExitCode)
+	return result
 }
 
 func runShell(ctx context.Context, payload map[string]interface{}) ([]byte, int, error) {

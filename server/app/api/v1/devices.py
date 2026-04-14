@@ -393,7 +393,9 @@ async def request_screenshot(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     service = DeviceService(db)
-    await service.get_device(device_id)
+    device = await service.get_device(device_id)
+    if device.is_revoked:
+        raise HTTPException(status_code=404, detail="Device not found")
     if not manager.is_connected(device_id):
         raise HTTPException(status_code=409, detail="Device is offline")
 
@@ -404,7 +406,7 @@ async def request_screenshot(
             "data": {"command_id": str(uuid.uuid4())},
         },
     )
-    return {"message": "Screenshot requested"}
+    return {"message": "Screenshot requested", "device_id": str(device_id)}
 
 
 @router.get("/{device_id}/screenshot")
@@ -415,8 +417,10 @@ async def get_screenshot(
 ):
     payload = await redis.get(f"screenshot:{device_id}")
     if payload is None:
-        raise HTTPException(status_code=404, detail="Screenshot not found")
-    return json.loads(payload)
+        return {"image_b64": None, "captured_at": None, "status": "not_captured"}
+    data = json.loads(payload)
+    data.setdefault("status", "captured")
+    return data
 
 
 @router.get("/{device_id}/processes")

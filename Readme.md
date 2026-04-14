@@ -2,6 +2,29 @@
 
 Device telemetry, remote command execution, alerting, and fleet management for Windows, Linux, and macOS endpoints.
 
+## Quick Start (Production)
+
+1. Build agent release binaries:
+```bash
+bash scripts/build-release.sh
+```
+
+2. Run the production setup:
+```bash
+bash scripts/setup-prod.sh
+```
+
+3. Access the UI and API:
+- Dashboard: `https://YOUR_DOMAIN`
+- API docs: `https://YOUR_DOMAIN/docs`
+
+## Quick Start (Development)
+
+```bash
+make dev
+make dev-agent
+```
+
 ## Prerequisites
 
 | Requirement | Version | Notes |
@@ -95,21 +118,9 @@ make dev-agent
 
 One-line install example:
 ```bash
-curl -fsSL https://your-server.example.com/api/v1/downloads/dtsys-agent-linux-amd64 -o /usr/local/bin/dtsys-agent && \
-chmod +x /usr/local/bin/dtsys-agent && \
-mkdir -p /etc/dtsys && \
-cat >/etc/dtsys/agent.toml <<'EOF'
-[server]
-url = "https://your-server.example.com"
-enrollment_token = "REPLACE_ME"
-
-[agent]
-
-[collect]
-telemetry_interval_secs = 60
-software_scan_interval_m = 60
-event_poll_interval_secs = 120
-EOF
+curl -fsSL https://your-server.example.com/install-agent.sh | sudo bash -s -- \
+  --server https://your-server.example.com \
+  --token REPLACE_ME
 ```
 
 Then install the service:
@@ -184,6 +195,7 @@ launchctl load ~/Library/LaunchAgents/com.dtsys.agent.plist
 | `/api/v1/alerts/{id}/resolve` | `POST` | Resolve an alert |
 | `/api/v1/agent/version` | `GET` | Agent update metadata |
 | `/api/v1/downloads/{filename}` | `GET` | Download agent binaries |
+| `/api/v1/agent/download` | `GET` | Download agent binary by arch/platform |
 | `/health` | `GET` | App, DB, Redis, and uptime health status |
 
 ## Build and Release

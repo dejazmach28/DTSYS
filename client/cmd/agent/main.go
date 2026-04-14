@@ -47,6 +47,11 @@ func main() {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
+	if err := collector.ConfigureEventFiltering(cfg.Events.DedupMaxEntries, cfg.Events.ExcludePatterns); err != nil {
+		slog.Error("failed to configure event filters", "error", err)
+		os.Exit(1)
+	}
+	collector.ConfigureEventRateLimit(cfg.Events.RateLimitMax, cfg.Events.RateLimitWindowS)
 	runtimeCfg := config.NewRuntimeConfig(cfg, *configPath)
 	executor.ConfigureDiagnostics(AgentVersion, func() *config.Config {
 		return runtimeCfg.Config()
@@ -72,6 +77,7 @@ func main() {
 			slog.Info("executing command", "type", cmd.CommandType, "id", cmd.CommandID)
 			result := executor.Execute(ctx, cmd, wsClient.Send)
 			if cmd.CommandType != "screenshot" {
+				slog.Info("sending command_result", "id", result.CommandID)
 				wsClient.SendCommandResult(result)
 			}
 		},
@@ -299,6 +305,9 @@ func telemetryLoop(ctx context.Context, client *transport.Client, runtimeCfg *co
 		case next := <-runtimeCfg.TelemetryUpdates():
 			ticker.Reset(next)
 		case <-ticker.C:
+			if !client.IsConnected() {
+				continue
+			}
 			data, err := collector.CollectTelemetry()
 			if err != nil {
 				slog.Warn("telemetry collection failed", "error", err)
@@ -329,6 +338,9 @@ func softwareLoop(ctx context.Context, client *transport.Client, runtimeCfg *con
 }
 
 func sendSoftware(client *transport.Client) {
+	if !client.IsConnected() {
+		return
+	}
 	pkgs, err := collector.CollectSoftware()
 	if err != nil {
 		slog.Warn("software collection failed", "error", err)
@@ -346,6 +358,9 @@ func ntpLoop(ctx context.Context, client *transport.Client, cfg *config.Config) 
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if !client.IsConnected() {
+				continue
+			}
 			status := collector.CollectNTPStatus()
 			client.SendNTPStatus(status)
 		}
@@ -370,6 +385,7 @@ func eventLoop(ctx context.Context, client *transport.Client, runtimeCfg *config
 				continue
 			}
 			lastChecked = time.Now()
+			events = collector.ApplyEventRateLimit(events)
 			for _, ev := range events {
 				client.SendEvent(ev)
 			}
@@ -393,6 +409,9 @@ func networkLoop(ctx context.Context, client *transport.Client) {
 }
 
 func sendNetwork(client *transport.Client) {
+	if !client.IsConnected() {
+		return
+	}
 	ifaces, err := collector.CollectNetworkInfo()
 	if err != nil {
 		slog.Warn("network collection failed", "error", err)
@@ -445,6 +464,9 @@ func processLoop(ctx context.Context, client *transport.Client) {
 }
 
 func sendProcesses(client *transport.Client) {
+	if !client.IsConnected() {
+		return
+	}
 	processes, err := collector.CollectTopProcesses(15)
 	if err != nil {
 		slog.Warn("process collection failed", "error", err)

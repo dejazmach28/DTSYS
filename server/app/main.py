@@ -6,12 +6,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import func, select, text
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1.router import router as api_router
 from app.config import get_settings
 from app.core.logging import configure_logging
+from app.core.rate_limit import limiter
 from app.core.redis import get_redis
 from app.db.session import AsyncSessionLocal, Base, engine
 from app.models.alert import Alert
@@ -19,6 +22,7 @@ from app.models.device import Device
 from app.version import VERSION
 from app.websocket.manager import manager
 from app.websocket.router import router as ws_router
+from app.tasks.cleanup_tasks import cleanup_stale_commands
 
 settings = get_settings()
 configure_logging()
@@ -46,6 +50,10 @@ async def lifespan(app: FastAPI):
             await conn.run_sync(Base.metadata.create_all)
 
     await _seed_admin()
+    try:
+        await cleanup_stale_commands()
+    except Exception:
+        pass
     yield
     await engine.dispose()
 
@@ -53,6 +61,7 @@ async def lifespan(app: FastAPI):
 async def _seed_admin():
     from app.core.security import hash_password
     from app.models.user import User
+    from sqlalchemy.exc import IntegrityError
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(User).where(User.username == "admin"))
@@ -63,7 +72,10 @@ async def _seed_admin():
                 role="admin",
             )
             db.add(user)
-            await db.commit()
+            try:
+                await db.commit()
+            except IntegrityError:
+                await db.rollback()
 
 
 app = FastAPI(
@@ -74,10 +86,12 @@ app = FastAPI(
     docs_url="/docs" if not settings.is_production else None,
     redoc_url="/redoc" if not settings.is_production else None,
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if not settings.is_production else ["https://your-domain.com"],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -193,4 +207,16 @@ async def public_status(request: Request):
           </body>
         </html>
         """
+    )
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=not settings.is_production,
+        timeout_keep_alive=300,
     )

@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -24,7 +25,9 @@ class CommandService:
         command_type: str,
         payload: dict,
         issued_by: uuid.UUID | None,
-    ) -> Command:
+        *,
+        fail_if_offline: bool = False,
+    ) -> tuple[Command, bool]:
         if command_type not in ALLOWED_COMMAND_TYPES:
             raise BadRequestError(f"Command type must be one of: {ALLOWED_COMMAND_TYPES}")
 
@@ -64,8 +67,12 @@ class CommandService:
             log.info("command_sent", command_id=str(command.id), device_id=str(device_id))
         else:
             log.warning("command_queued_device_offline", command_id=str(command.id))
+            if fail_if_offline:
+                command.status = "failed"
+                command.output = "Device not connected"
+                command.completed_at = datetime.now(timezone.utc)
 
-        return command
+        return command, sent
 
     async def get_command(self, command_id: uuid.UUID) -> Command:
         result = await self.db.execute(select(Command).where(Command.id == command_id))

@@ -1,15 +1,15 @@
+version: "3.9"
+
 services:
   postgres:
     image: timescale/timescaledb:latest-pg16
-    restart: unless-stopped
+    restart: always
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-dtsys}
       POSTGRES_USER: ${POSTGRES_USER:-dtsys}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dtsys}"]
       interval: 10s
@@ -18,12 +18,10 @@ services:
 
   redis:
     image: redis:7-alpine
-    restart: unless-stopped
+    restart: always
     command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD required}
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "--pass", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -34,77 +32,105 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
-    restart: unless-stopped
+    restart: always
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dtsys}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dtsys}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY required}
       FIRST_ADMIN_PASSWORD: ${FIRST_ADMIN_PASSWORD:-changeme}
       ENVIRONMENT: production
+      ENV: production
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     volumes:
       - ./server:/app
-      - ./dist/agents:/app/dist/agents:ro
+      - ./dist:/app/dist:ro
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   worker:
     build:
       context: ./server
       dockerfile: Dockerfile
-    restart: unless-stopped
+    restart: always
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dtsys}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dtsys}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SECRET_KEY: ${SECRET_KEY}
+      ENVIRONMENT: production
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A app.tasks.celery_app worker --loglevel=info
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.celery_app inspect ping -d celery@$(hostname)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   beat:
     build:
       context: ./server
       dockerfile: Dockerfile
-    restart: unless-stopped
+    restart: always
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dtsys}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dtsys}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SECRET_KEY: ${SECRET_KEY}
+      ENVIRONMENT: production
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     command: celery -A app.tasks.celery_app beat --loglevel=info
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.celery_app inspect ping -d celery@$(hostname)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    restart: unless-stopped
+    restart: always
     expose:
       - "80"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /usr/share/nginx/html/index.html"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   nginx:
     image: nginx:alpine
-    restart: unless-stopped
+    restart: always
     ports:
-      - "8080:80"
-      - "8443:443"
+      - "80:80"
+      - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl
     depends_on:
       - server
       - frontend
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   postgres_data:
