@@ -2,6 +2,7 @@
 
 import csv
 import io
+import uuid
 from datetime import date, timedelta
 from typing import Annotated
 
@@ -10,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_current_org_id
 from app.models.device import Device
 from app.models.user import User
 
@@ -20,12 +21,17 @@ router = APIRouter(prefix="/inventory", tags=["inventory"])
 @router.get("")
 async def list_inventory(
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
     location: str | None = Query(None),
     assigned_to: str | None = Query(None),
     warranty_expiring_days: int | None = Query(None, ge=1, le=3650),
 ):
-    query = select(Device).where(~Device.is_revoked).order_by(Device.hostname.asc())
+    query = (
+        select(Device)
+        .where(~Device.is_revoked, Device.org_id == current_org_id)
+        .order_by(Device.hostname.asc())
+    )
     if location:
         query = query.where(Device.location == location)
     if assigned_to:
@@ -42,9 +48,14 @@ async def list_inventory(
 @router.get("/export.csv")
 async def export_inventory_csv(
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    result = await db.execute(select(Device).where(~Device.is_revoked).order_by(Device.hostname.asc()))
+    result = await db.execute(
+        select(Device)
+        .where(~Device.is_revoked, Device.org_id == current_org_id)
+        .order_by(Device.hostname.asc())
+    )
     devices = result.scalars().all()
 
     output = io.StringIO()

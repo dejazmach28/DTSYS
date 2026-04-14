@@ -71,6 +71,10 @@ rate_limit_window_s = 30
 
 [tls]
 skip_time_check = true
+
+[update]
+auto_update = true
+check_interval_hours = 6
 "@
 Set-Content -Path $configPath -Value $configContent -Encoding ASCII
 

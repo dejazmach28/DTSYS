@@ -20,6 +20,11 @@ from app.services.alert_service import AlertService
 from app.services.activity_stream import activity_event_stream
 
 log = get_logger(__name__)
+MAX_EVENT_MESSAGE_LEN = 2048
+MAX_EVENT_SOURCE_LEN = 256
+MAX_RAW_DATA_BYTES = 4096
+MAX_SCREENSHOT_B64 = 2_000_000
+MAX_PROCESS_COUNT = 50
 
 
 class MessageHandler:
@@ -50,6 +55,8 @@ class MessageHandler:
                 return await self._handle_ssh_keys(device, payload)
             case ClientMessageType.PROCESS_LIST:
                 return await self._handle_process_list(device, payload)
+            case ClientMessageType.AGENT_INFO:
+                return await self._handle_agent_info(device, payload)
             case ClientMessageType.COMMAND_OUTPUT:
                 return await self._handle_command_output(device, payload)
             case ClientMessageType.COMMAND_RESULT:
@@ -106,12 +113,29 @@ class MessageHandler:
             self.db.add(sw)
 
     async def _handle_event(self, device: Device, data: dict) -> None:
+        if self.redis is not None:
+            key = f"event_rate:{device.id}"
+            count = await self.redis.incr(key)
+            if count == 1:
+                await self.redis.expire(key, 30)
+            if count > 100:
+                log.warning("event_rate_limited", device_id=str(device.id), count=count)
+                return
+        message = _truncate(data.get("message", ""), MAX_EVENT_MESSAGE_LEN)
+        source = _truncate(data.get("source", ""), MAX_EVENT_SOURCE_LEN)
+        raw_data = data.get("raw_data")
+        if raw_data is not None:
+            try:
+                if len(json.dumps(raw_data)) > MAX_RAW_DATA_BYTES:
+                    raw_data = {"truncated": True}
+            except (TypeError, ValueError):
+                raw_data = {"truncated": True}
         event = Event(
             device_id=device.id,
             event_type=data.get("event_type", "info"),
-            source=data.get("source"),
-            message=data.get("message", ""),
-            raw_data=data.get("raw_data"),
+            source=source or None,
+            message=message,
+            raw_data=raw_data,
         )
         self.db.add(event)
         await self.db.flush()
@@ -119,6 +143,7 @@ class MessageHandler:
             {
                 "device_id": str(device.id),
                 "device_hostname": device.label or device.hostname,
+                "org_id": str(device.org_id) if device.org_id else None,
                 "event_type": event.event_type,
                 "message": event.message,
                 "source": event.source,
@@ -131,7 +156,7 @@ class MessageHandler:
                 device=device,
                 alert_type="crash",
                 severity="critical",
-                message=f"Crash detected: {data.get('message', '')}",
+                message=f"Crash detected: {message}",
             )
 
     async def _handle_ntp(self, device: Device, data: dict) -> None:
@@ -249,8 +274,12 @@ class MessageHandler:
     async def _handle_screenshot_result(self, device: Device, data: dict) -> None:
         if self.redis is None:
             return
+        image_b64 = data.get("image_b64")
+        if image_b64 and len(image_b64) > MAX_SCREENSHOT_B64:
+            log.warning("screenshot_too_large", device_id=str(device.id), size=len(image_b64))
+            return
         payload = {
-            "image_b64": data.get("image_b64"),
+            "image_b64": image_b64,
             "captured_at": datetime.now(timezone.utc).isoformat(),
             "width": data.get("width"),
             "height": data.get("height"),
@@ -261,11 +290,21 @@ class MessageHandler:
     async def _handle_process_list(self, device: Device, data: dict) -> None:
         if self.redis is None:
             return
+        processes = data.get("processes", [])
+        if isinstance(processes, list) and len(processes) > MAX_PROCESS_COUNT:
+            processes = processes[:MAX_PROCESS_COUNT]
         payload = {
-            "processes": data.get("processes", []),
+            "processes": processes,
             "captured_at": datetime.now(timezone.utc).isoformat(),
         }
         await self.redis.setex(f"process_list:{device.id}", 600, json.dumps(payload))
+
+    async def _handle_agent_info(self, device: Device, data: dict) -> None:
+        version = data.get("version")
+        if version:
+            device.agent_version = str(version)[:50]
+        device.last_seen = datetime.now(timezone.utc)
+        device.status = "online"
 
     async def _handle_ssh_keys(self, device: Device, data: dict) -> None:
         await self.db.execute(delete(SSHKey).where(SSHKey.device_id == device.id))
@@ -292,6 +331,15 @@ def _extract_ip(value: str) -> ipaddress.IPv4Address | None:
     if isinstance(ip, ipaddress.IPv4Address):
         return ip
     return None
+
+
+def _truncate(value: str | None, limit: int) -> str:
+    if not value:
+        return ""
+    value = str(value)
+    if len(value) <= limit:
+        return value
+    return value[:limit]
 
 
 async def auto_resolve_alerts(db: AsyncSession, device_id: uuid.UUID, telemetry: dict) -> None:

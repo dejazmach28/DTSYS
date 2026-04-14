@@ -1,6 +1,6 @@
 import uuid
 from typing import Annotated
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Request, Response, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.models.user import User
 from app.models.command import Command
-from app.dependencies import get_current_user
+from app.models.device import Device
+from app.dependencies import get_current_user, get_current_org_id
 from app.services.audit_service import log_action
 from app.services.command_service import CommandService
 from app.core.logging import get_logger
@@ -39,8 +40,10 @@ async def dispatch_command(
     body: CommandRequest,
     request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    device = await _get_device_for_org(db, device_id, current_org_id)
     service = CommandService(db)
     cmd, sent = await service.dispatch_command(
         device_id=device_id,
@@ -55,7 +58,7 @@ async def dispatch_command(
         device_id=str(device_id),
         command_type=body.command_type,
         payload=body.payload,
-        connected=manager.is_connected(device_id),
+        connected=manager.is_connected(device.id),
         sent=sent,
     )
     await log_action(
@@ -78,11 +81,13 @@ async def dispatch_command(
 async def list_commands(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
     response: Response,
     skip: int = 0,
     limit: int = 50,
 ):
+    await _get_device_for_org(db, device_id, current_org_id)
     total = int(
         await db.scalar(
             select(func.count()).select_from(Command).where(Command.device_id == device_id)
@@ -118,10 +123,14 @@ async def get_command(
     device_id: uuid.UUID,
     command_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    await _get_device_for_org(db, device_id, current_org_id)
     service = CommandService(db)
     cmd = await service.get_command(command_id)
+    if cmd.device_id != device_id:
+        raise HTTPException(status_code=404, detail="Command not found")
     return {
         "id": str(cmd.id),
         "command_type": cmd.command_type,
@@ -133,3 +142,13 @@ async def get_command(
         "started_at": cmd.started_at.isoformat() if cmd.started_at else None,
         "completed_at": cmd.completed_at.isoformat() if cmd.completed_at else None,
     }
+
+
+async def _get_device_for_org(db: AsyncSession, device_id: uuid.UUID, org_id: uuid.UUID) -> Device:
+    result = await db.execute(
+        select(Device).where(Device.id == device_id, Device.org_id == org_id, ~Device.is_revoked)
+    )
+    device = result.scalar_one_or_none()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return device

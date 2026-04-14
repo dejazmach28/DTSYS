@@ -45,7 +45,10 @@ async def test_refresh_token(client, monkeypatch):
     async def fake_refresh_access_token(self, token: str) -> dict:
         assert token == refresh_token
         return {
-            "access_token": create_access_token("00000000-0000-0000-0000-000000000001", {"role": "admin"}),
+            "access_token": create_access_token(
+                "00000000-0000-0000-0000-000000000001",
+                {"role": "admin", "org_id": "00000000-0000-0000-0000-000000000010"},
+            ),
             "token_type": "bearer",
         }
 

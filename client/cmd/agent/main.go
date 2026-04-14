@@ -80,6 +80,20 @@ func main() {
 		tlsConfig,
 		func(cmd transport.IncomingCommand) {
 			slog.Info("executing command", "type", cmd.CommandType, "id", cmd.CommandID)
+			if cmd.CommandType == transport.MsgTypeUpdate {
+				if cfg.Update.AutoUpdate {
+					if updated := runUpdateCommand(ctx, cfg, tlsConfig); updated {
+						restartAgent()
+						return
+					}
+				}
+				wsClient.SendCommandResult(transport.CommandResultData{
+					CommandID: cmd.CommandID,
+					ExitCode:  0,
+					Output:    "Update check completed",
+				})
+				return
+			}
 			result := executor.Execute(ctx, cmd, wsClient.Send)
 			if cmd.CommandType != "screenshot" {
 				slog.Info("sending command_result", "id", result.CommandID)
@@ -112,7 +126,8 @@ func main() {
 	go networkLoop(ctx, wsClient)
 	go sshKeyLoop(ctx, wsClient)
 	go processLoop(ctx, wsClient)
-	go updateLoop(ctx, cfg)
+	go agentInfoLoop(ctx, wsClient)
+	go updateLoop(ctx, cfg, tlsConfig)
 
 	// Run WebSocket connection (blocks until ctx cancelled)
 	wsClient.Run(ctx)
@@ -504,6 +519,31 @@ func processLoop(ctx context.Context, client *transport.Client) {
 	}
 }
 
+func agentInfoLoop(ctx context.Context, client *transport.Client) {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	send := func() {
+		if !client.IsConnected() {
+			return
+		}
+		client.SendAgentInfo(transport.AgentInfoData{
+			Version:   AgentVersion,
+			BuildDate: version.BuildDate,
+		})
+	}
+
+	send()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			send()
+		}
+	}
+}
+
 func sendProcesses(client *transport.Client) {
 	if !client.IsConnected() {
 		return
@@ -517,10 +557,13 @@ func sendProcesses(client *transport.Client) {
 	client.SendProcessList(processes)
 }
 
-func updateLoop(ctx context.Context, cfg *config.Config) {
-	ticker := time.NewTicker(6 * time.Hour)
+func updateLoop(ctx context.Context, cfg *config.Config, tlsConfig *tls.Config) {
+	if !cfg.Update.AutoUpdate {
+		return
+	}
+	interval := time.Duration(maxInt(cfg.Update.CheckIntervalHours, 1)) * time.Hour
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	tlsConfig := transport.BuildTLSConfig(cfg.Server.URL, cfg.TLS.SkipTimeCheck)
 
 	check := func() bool {
 		updateCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -559,6 +602,25 @@ func updateLoop(ctx context.Context, cfg *config.Config) {
 	}
 }
 
+func runUpdateCommand(ctx context.Context, cfg *config.Config, tlsConfig *tls.Config) bool {
+	updateCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	updated, err := updater.CheckAndUpdate(
+		updateCtx,
+		cfg.Server.URL,
+		AgentVersion,
+		cfg.Agent.DeviceID,
+		cfg.Agent.APIKey,
+		tlsConfig,
+	)
+	if err != nil {
+		slog.Warn("agent update command failed", "error", err)
+		return false
+	}
+	return updated
+}
+
 func restartAgent() {
 	slog.Info("Agent updated, restarting...")
 
@@ -586,4 +648,11 @@ func restartAgent() {
 		return
 	}
 	os.Exit(0)
+}
+
+func maxInt(value, minimum int) int {
+	if value < minimum {
+		return minimum
+	}
+	return value
 }

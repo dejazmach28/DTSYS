@@ -306,6 +306,10 @@ func (c *Client) SendProcessList(processes []ProcessInfo) {
 	c.Send(Message{Type: MsgTypeProcessList, Data: ProcessListData{Processes: processes}})
 }
 
+func (c *Client) SendAgentInfo(info AgentInfoData) {
+	c.Send(Message{Type: MsgTypeAgentInfo, Data: info})
+}
+
 func (c *Client) SendSSHKeys(keys []SSHKeyInfo) {
 	c.Send(Message{Type: MsgTypeSSHKeys, Data: SSHKeysData{Keys: keys}})
 }

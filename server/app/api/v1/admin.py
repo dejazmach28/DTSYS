@@ -1,3 +1,4 @@
+import json
 import secrets
 import uuid
 from typing import Annotated
@@ -189,8 +190,14 @@ async def generate_enrollment_token(
     current_user: Annotated[User, Depends(require_admin)],
     redis: Annotated[Redis, Depends(get_redis)],
 ):
+    if current_user.active_org_id is None:
+        raise HTTPException(status_code=400, detail="No active organization for user")
     token = secrets.token_urlsafe(24)
-    await redis.setex(f"enrollment:{token}", 3600, "valid")
+    await redis.setex(
+        f"enrollment:{token}",
+        3600,
+        json.dumps({"org_id": str(current_user.active_org_id)}),
+    )
     return {
         "enrollment_token": token,
         "expires_in_minutes": 60,

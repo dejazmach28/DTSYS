@@ -22,6 +22,7 @@ export interface Device {
   maintenance_mode?: boolean
   maintenance_until?: string | null
   maintenance_reason?: string | null
+  agent_version?: string | null
   is_online: boolean
 }
 

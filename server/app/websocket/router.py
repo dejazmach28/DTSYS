@@ -1,4 +1,5 @@
 import asyncio
+import json
 import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query
 from redis.asyncio import Redis
@@ -22,6 +23,7 @@ router = APIRouter()
 log = get_logger(__name__)
 _pending_offline: dict[uuid.UUID, asyncio.Task] = {}
 _pending_lock = asyncio.Lock()
+MAX_WS_MESSAGE_BYTES = 256 * 1024
 
 
 async def _ping_loop(websocket: WebSocket, device_id: uuid.UUID, interval: int = 30) -> None:
@@ -148,7 +150,16 @@ async def device_websocket(
 
     try:
         while True:
-            message = await websocket.receive_json()
+            raw = await websocket.receive_text()
+            if len(raw) > MAX_WS_MESSAGE_BYTES:
+                await websocket.close(code=1009)
+                log.warning("ws_message_too_large", device_id=str(device_id), size=len(raw))
+                return
+            try:
+                message = json.loads(raw)
+            except json.JSONDecodeError:
+                log.warning("ws_invalid_json", device_id=str(device_id))
+                continue
             await handler.handle(device, message)
             await db.commit()
             await websocket.send_json({"type": "ack"})

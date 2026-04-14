@@ -22,6 +22,7 @@ class DeviceService:
         arch: str | None,
         fingerprint: str,
         ip_address: str | None,
+        org_id: uuid.UUID | None,
     ) -> tuple[Device, str]:
         """Register a new device. Returns (device, raw_api_key)."""
         # Check if device with this fingerprint already exists
@@ -42,21 +43,25 @@ class DeviceService:
             ip_address=ip_address,
             api_key_hash=hash_api_key(raw_key),
             status="offline",
+            org_id=org_id,
         )
         self.db.add(device)
         await self.db.flush()
         log.info("device_registered", device_id=str(device.id), hostname=hostname)
         return device, raw_key
 
-    async def get_device(self, device_id: uuid.UUID) -> Device:
-        result = await self.db.execute(select(Device).where(Device.id == device_id))
+    async def get_device(self, device_id: uuid.UUID, org_id: uuid.UUID | None = None) -> Device:
+        query = select(Device).where(Device.id == device_id)
+        if org_id is not None:
+            query = query.where(Device.org_id == org_id)
+        result = await self.db.execute(query)
         device = result.scalar_one_or_none()
         if not device:
             raise NotFoundError(f"Device {device_id} not found")
         return device
 
-    async def revoke_device(self, device_id: uuid.UUID) -> Device:
-        device = await self.get_device(device_id)
+    async def revoke_device(self, device_id: uuid.UUID, org_id: uuid.UUID | None = None) -> Device:
+        device = await self.get_device(device_id, org_id=org_id)
         device.is_revoked = True
         device.status = "offline"
         return device
@@ -67,8 +72,11 @@ class DeviceService:
         limit: int = 100,
         tag: str | None = None,
         search: str | None = None,
+        org_id: uuid.UUID | None = None,
     ) -> list[Device]:
         query = select(Device).where(~Device.is_revoked)
+        if org_id is not None:
+            query = query.where(Device.org_id == org_id)
         if tag:
             query = query.where(Device.tags.any(tag))
         if search:
@@ -89,10 +97,13 @@ class DeviceService:
         self,
         tag: str | None = None,
         search: str | None = None,
+        org_id: uuid.UUID | None = None,
     ) -> int:
         from sqlalchemy import func
 
         query = select(func.count()).select_from(Device).where(~Device.is_revoked)
+        if org_id is not None:
+            query = query.where(Device.org_id == org_id)
         if tag:
             query = query.where(Device.tags.any(tag))
         if search:

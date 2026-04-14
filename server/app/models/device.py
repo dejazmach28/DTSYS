@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Boolean, Date, DateTime, Text, Uuid
+from sqlalchemy import String, Boolean, Date, DateTime, Text, Uuid, ForeignKey
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -52,6 +52,8 @@ class Device(Base):
     maintenance_mode: Mapped[bool] = mapped_column(Boolean, default=False)
     maintenance_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     maintenance_reason: Mapped[str | None] = mapped_column(String(500))
+    agent_version: Mapped[str | None] = mapped_column(String(50))
+    org_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"))
 
     software: Mapped[list[SoftwareInventory]] = relationship(back_populates="device", lazy="select")
     events: Mapped[list[Event]] = relationship(back_populates="device", lazy="select")

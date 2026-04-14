@@ -45,3 +45,23 @@ async def require_admin(current_user: Annotated[User, Depends(get_current_user)]
     if current_user.role != "admin":
         raise ForbiddenError("Admin role required")
     return current_user
+
+
+async def get_current_org_id(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+) -> uuid.UUID:
+    if credentials is None:
+        raise UnauthorizedError("Missing bearer token")
+
+    try:
+        payload = decode_token(credentials.credentials)
+    except ValueError:
+        raise UnauthorizedError("Invalid or expired token")
+
+    if payload.get("type") != "access":
+        raise UnauthorizedError("Wrong token type")
+
+    org_id = payload.get("org_id")
+    if not org_id:
+        raise UnauthorizedError("Missing organization")
+    return uuid.UUID(org_id)

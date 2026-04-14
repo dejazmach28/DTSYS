@@ -147,6 +147,10 @@ rate_limit_window_s = 30
 
 [tls]
 skip_time_check = true
+
+[update]
+auto_update = true
+check_interval_hours = 6
 EOF
 chmod 600 "$CONFIG_PATH"
 

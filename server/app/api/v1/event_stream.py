@@ -1,10 +1,11 @@
 import asyncio
 import json
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_current_org_id
 from app.models.user import User
 from app.services.event_stream import alert_event_stream
 
@@ -18,6 +19,7 @@ _connection_lock = asyncio.Lock()
 async def stream_alerts(
     request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
 ):
     user_key = str(current_user.id)
     async with _connection_lock:
@@ -35,6 +37,8 @@ async def stream_alerts(
                     break
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=15)
+                    if payload.get("org_id") and payload.get("org_id") != str(current_org_id):
+                        continue
                     yield f"data: {json.dumps(payload)}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keep-alive\n\n"

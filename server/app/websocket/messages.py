@@ -11,6 +11,7 @@ Client -> Server messages:
   - network_info: network interface info
   - ssh_keys: authorized SSH key inventory
   - process_list: latest top process snapshot
+  - agent_info: agent version metadata
   - command_output: streaming output from a running command
   - command_result: final result of a command execution
   - screenshot_result: screenshot capture result
@@ -33,6 +34,7 @@ class ClientMessageType(StrEnum):
     NETWORK_INFO = "network_info"
     SSH_KEYS = "ssh_keys"
     PROCESS_LIST = "process_list"
+    AGENT_INFO = "agent_info"
     COMMAND_OUTPUT = "command_output"
     COMMAND_RESULT = "command_result"
     SCREENSHOT_RESULT = "screenshot_result"

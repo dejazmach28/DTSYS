@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_current_org_id
 from app.models.device import Device
 from app.models.software import SoftwareInventory
 from app.models.user import User
@@ -24,10 +24,13 @@ class SoftwareDispatchRequest(BaseModel):
 @router.get("/pending")
 async def get_pending_updates(
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     result = await db.execute(
-        select(SoftwareInventory).where(SoftwareInventory.update_available)
+        select(SoftwareInventory)
+        .join(Device, SoftwareInventory.device_id == Device.id)
+        .where(SoftwareInventory.update_available, Device.org_id == current_org_id)
     )
     packages = result.scalars().all()
 
@@ -60,11 +63,12 @@ async def get_pending_updates(
 async def dispatch_updates(
     body: SoftwareDispatchRequest,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     command_service = CommandService(db)
     devices_result = await db.execute(
-        select(Device).where(Device.id.in_(body.device_ids))
+        select(Device).where(Device.id.in_(body.device_ids), Device.org_id == current_org_id)
     )
     devices = {device.id: device for device in devices_result.scalars().all()}
 

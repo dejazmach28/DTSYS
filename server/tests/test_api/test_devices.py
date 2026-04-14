@@ -21,6 +21,7 @@ async def test_list_devices_empty(client, admin_token, monkeypatch):
         limit: int = 100,
         tag: str | None = None,
         search: str | None = None,
+        org_id: uuid.UUID | None = None,
     ):
         return []
 

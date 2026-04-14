@@ -1,18 +1,18 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.models.command import Command
 from app.models.device import Device
 from app.websocket.manager import manager
 from app.websocket.messages import ServerMessageType
-from app.core.exceptions import NotFoundError, BadRequestError
+from app.core.exceptions import NotFoundError, BadRequestError, TooManyRequestsError
 from app.core.logging import get_logger
 
 log = get_logger(__name__)
 
-ALLOWED_COMMAND_TYPES = {"shell", "script", "update_check", "reboot", "sync_time", "request_process_list", "diagnostics"}
+ALLOWED_COMMAND_TYPES = {"shell", "script", "update_check", "reboot", "sync_time", "request_process_list", "diagnostics", "update"}
 
 
 class CommandService:
@@ -33,6 +33,20 @@ class CommandService:
 
         if command_type == "sync_time" and "target_time" not in payload:
             payload = {**payload, "target_time": datetime.now(timezone.utc).isoformat()}
+
+        pending_count = int(
+            await self.db.scalar(
+                select(func.count())
+                .select_from(Command)
+                .where(
+                    Command.device_id == device_id,
+                    Command.status.in_(["pending", "sent"]),
+                )
+            )
+            or 0
+        )
+        if pending_count >= 100:
+            raise TooManyRequestsError("Too many queued commands for this device")
 
         # Verify device exists
         result = await self.db.execute(

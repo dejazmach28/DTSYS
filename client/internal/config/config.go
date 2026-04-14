@@ -13,6 +13,7 @@ type Config struct {
 	Collect CollectConfig `toml:"collect"`
 	Events  EventsConfig  `toml:"events"`
 	TLS     TLSConfig     `toml:"tls"`
+	Update  UpdateConfig  `toml:"update"`
 }
 
 type ServerConfig struct {
@@ -42,6 +43,11 @@ type TLSConfig struct {
 	SkipTimeCheck bool `toml:"skip_time_check"` // default true
 }
 
+type UpdateConfig struct {
+	AutoUpdate         bool `toml:"auto_update"`            // default true
+	CheckIntervalHours int  `toml:"check_interval_hours"`   // default 6
+}
+
 func Load(path string) (*Config, error) {
 	cfg := &Config{
 		Collect: CollectConfig{
@@ -57,6 +63,10 @@ func Load(path string) (*Config, error) {
 		},
 		TLS: TLSConfig{
 			SkipTimeCheck: true,
+		},
+		Update: UpdateConfig{
+			AutoUpdate:         true,
+			CheckIntervalHours: 6,
 		},
 	}
 

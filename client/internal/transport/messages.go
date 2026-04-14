@@ -11,12 +11,14 @@ const (
 	MsgTypeNetworkInfo       = "network_info"
 	MsgTypeSSHKeys           = "ssh_keys"
 	MsgTypeProcessList       = "process_list"
+	MsgTypeAgentInfo         = "agent_info"
 	MsgTypeCommandOutput     = "command_output"
 	MsgTypeCommandResult     = "command_result"
 	MsgTypeScreenshotResult  = "screenshot_result"
 
 	// Command types
 	MsgTypeSyncTime = "sync_time"
+	MsgTypeUpdate   = "update"
 
 	// Server -> Client
 	MsgTypeCommand           = "command"
@@ -108,6 +110,11 @@ type ProcessInfo struct {
 
 type ProcessListData struct {
 	Processes []ProcessInfo `json:"processes"`
+}
+
+type AgentInfoData struct {
+	Version   string `json:"version"`
+	BuildDate string `json:"build_date,omitempty"`
 }
 
 type CommandResultData struct {

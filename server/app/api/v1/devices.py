@@ -19,7 +19,7 @@ from app.models.network import DeviceNetworkInfo
 from app.models.ssh_key import SSHKey
 from app.models.uptime_event import UptimeEvent
 from app.models.user import User
-from app.dependencies import get_current_user, require_admin
+from app.dependencies import get_current_user, require_admin, get_current_org_id
 from app.services.audit_service import log_action
 from app.services.device_service import DeviceService
 from app.websocket.manager import manager
@@ -87,8 +87,19 @@ async def register_device(
         raise HTTPException(status_code=429, detail="Too many registration attempts")
 
     token_key = f"enrollment:{body.enrollment_token}"
-    if await redis.get(token_key) is None:
+    token_value = await redis.get(token_key)
+    if token_value is None:
         raise HTTPException(status_code=400, detail="Invalid or expired enrollment token")
+    org_id: uuid.UUID | None = None
+    if isinstance(token_value, (bytes, bytearray)):
+        token_value = token_value.decode("utf-8", errors="ignore")
+    try:
+        payload = json.loads(token_value)
+        org_raw = payload.get("org_id")
+        if org_raw:
+            org_id = uuid.UUID(str(org_raw))
+    except Exception:
+        org_id = None
 
     service = DeviceService(db)
     device, raw_key = await service.register_device(
@@ -98,6 +109,7 @@ async def register_device(
         arch=body.arch,
         fingerprint=body.fingerprint,
         ip_address=body.ip_address,
+        org_id=org_id,
     )
     await db.commit()
     await redis.delete(token_key)
@@ -111,6 +123,7 @@ async def register_device(
 @router.get("")
 async def list_devices(
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
     response: Response,
     skip: int = Query(0, ge=0),
@@ -119,9 +132,9 @@ async def list_devices(
     search: str | None = Query(None),
 ):
     service = DeviceService(db)
-    total = await service.count_devices(tag=tag, search=search)
+    total = await service.count_devices(tag=tag, search=search, org_id=current_org_id)
     response.headers["X-Total-Count"] = str(total)
-    devices = await service.list_devices(skip=skip, limit=limit, tag=tag, search=search)
+    devices = await service.list_devices(skip=skip, limit=limit, tag=tag, search=search, org_id=current_org_id)
     return [
         {
             "id": str(d.id),
@@ -147,6 +160,7 @@ async def list_devices(
             "maintenance_mode": d.maintenance_mode,
             "maintenance_until": d.maintenance_until.isoformat() if d.maintenance_until else None,
             "maintenance_reason": d.maintenance_reason,
+            "agent_version": d.agent_version,
             "is_online": manager.is_connected(d.id),
         }
         for d in devices
@@ -157,10 +171,15 @@ async def list_devices(
 async def get_device_by_fingerprint(
     fingerprint: str,
     current_user: Annotated[User, Depends(require_admin)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     result = await db.execute(
-        select(Device).where(Device.fingerprint == fingerprint, ~Device.is_revoked)
+        select(Device).where(
+            Device.fingerprint == fingerprint,
+            Device.org_id == current_org_id,
+            ~Device.is_revoked,
+        )
     )
     device = result.scalar_one_or_none()
     if device is None:
@@ -178,10 +197,11 @@ async def get_device_by_fingerprint(
 async def get_device(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     service = DeviceService(db)
-    d = await service.get_device(device_id)
+    d = await service.get_device(device_id, org_id=current_org_id)
     return {
         "id": str(d.id),
         "hostname": d.hostname,
@@ -206,6 +226,7 @@ async def get_device(
         "maintenance_mode": d.maintenance_mode,
         "maintenance_until": d.maintenance_until.isoformat() if d.maintenance_until else None,
         "maintenance_reason": d.maintenance_reason,
+        "agent_version": d.agent_version,
         "is_online": manager.is_connected(d.id),
     }
 
@@ -214,10 +235,10 @@ async def get_device(
 async def get_device_network(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    service = DeviceService(db)
-    await service.get_device(device_id)
+    await _get_device_for_org(db, device_id, current_org_id)
 
     result = await db.execute(
         select(DeviceNetworkInfo)
@@ -247,10 +268,10 @@ async def update_device(
     device_id: uuid.UUID,
     body: UpdateDeviceRequest,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    service = DeviceService(db)
-    device = await service.get_device(device_id)
+    device = await _get_device_for_org(db, device_id, current_org_id)
     updates = body.model_dump(exclude_unset=True)
     if "label" in updates:
         device.label = body.label
@@ -279,10 +300,10 @@ async def set_device_maintenance(
     device_id: uuid.UUID,
     body: MaintenanceRequest,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    service = DeviceService(db)
-    device = await service.get_device(device_id)
+    device = await _get_device_for_org(db, device_id, current_org_id)
     device.maintenance_mode = body.enabled
     device.maintenance_until = body.until if body.enabled else None
     device.maintenance_reason = body.reason if body.enabled else None
@@ -299,10 +320,10 @@ async def set_device_maintenance(
 async def get_device_config(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    service = DeviceService(db)
-    await service.get_device(device_id)
+    await _get_device_for_org(db, device_id, current_org_id)
     config_row = await db.get(DeviceConfig, device_id)
     config_data = config_row.config if config_row else _default_device_config()
     return {
@@ -317,10 +338,10 @@ async def update_device_config(
     device_id: uuid.UUID,
     body: DeviceConfigRequest,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    service = DeviceService(db)
-    await service.get_device(device_id)
+    await _get_device_for_org(db, device_id, current_org_id)
 
     payload = body.model_dump()
     config_row = await db.get(DeviceConfig, device_id)
@@ -350,10 +371,11 @@ async def update_device_config(
 async def revoke_device(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(require_admin)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     service = DeviceService(db)
-    await service.revoke_device(device_id)
+    await service.revoke_device(device_id, org_id=current_org_id)
     await log_action(
         db,
         current_user,
@@ -369,10 +391,10 @@ async def revoke_device(
 async def rotate_device_key(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(require_admin)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    service = DeviceService(db)
-    device = await service.get_device(device_id)
+    device = await _get_device_for_org(db, device_id, current_org_id)
     raw_key = generate_api_key()
     device.api_key_hash = hash_api_key(raw_key)
     await log_action(
@@ -390,10 +412,10 @@ async def rotate_device_key(
 async def request_screenshot(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    service = DeviceService(db)
-    device = await service.get_device(device_id)
+    device = await _get_device_for_org(db, device_id, current_org_id)
     if device.is_revoked:
         raise HTTPException(status_code=404, detail="Device not found")
     if not manager.is_connected(device_id):
@@ -413,8 +435,11 @@ async def request_screenshot(
 async def get_screenshot(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     redis: Annotated[Redis, Depends(get_redis)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    await _get_device_for_org(db, device_id, current_org_id)
     payload = await redis.get(f"screenshot:{device_id}")
     if payload is None:
         return {"image_b64": None, "captured_at": None, "status": "not_captured"}
@@ -427,8 +452,11 @@ async def get_screenshot(
 async def get_device_processes(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     redis: Annotated[Redis, Depends(get_redis)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    await _get_device_for_org(db, device_id, current_org_id)
     payload = await redis.get(f"process_list:{device_id}")
     if payload is None:
         raise HTTPException(status_code=404, detail="Process list not found")
@@ -439,8 +467,10 @@ async def get_device_processes(
 async def get_device_ssh_keys(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    await _get_device_for_org(db, device_id, current_org_id)
     result = await db.execute(
         select(SSHKey).where(SSHKey.device_id == device_id).order_by(SSHKey.discovered_at.desc())
     )
@@ -463,8 +493,10 @@ async def delete_device_ssh_key(
     device_id: uuid.UUID,
     key_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    await _get_device_for_org(db, device_id, current_org_id)
     key = await db.get(SSHKey, key_id)
     if key is None or key.device_id != device_id:
         raise HTTPException(status_code=404, detail="SSH key not found")
@@ -477,9 +509,11 @@ async def delete_device_ssh_key(
 async def get_uptime_history(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
     days: int = Query(30, ge=1, le=365),
 ):
+    await _get_device_for_org(db, device_id, current_org_id)
     since = datetime.now(timezone.utc) - timedelta(days=days)
     result = await db.execute(
         select(UptimeEvent)
@@ -510,9 +544,11 @@ async def get_uptime_history(
 async def get_agent_logs(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
     limit: int = Query(200, ge=1, le=1000),
 ):
+    await _get_device_for_org(db, device_id, current_org_id)
     result = await db.execute(
         select(Event)
         .where(
@@ -539,10 +575,10 @@ async def get_agent_logs(
 async def disconnect_device(
     device_id: uuid.UUID,
     current_user: Annotated[User, Depends(require_admin)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    service = DeviceService(db)
-    await service.get_device(device_id)
+    await _get_device_for_org(db, device_id, current_org_id)
     await manager.disconnect(device_id)
     return {"message": "Disconnected"}
 
@@ -562,3 +598,13 @@ def _get_client_ip(request: Request) -> str:
     if request.client:
         return request.client.host
     return "unknown"
+
+
+async def _get_device_for_org(db: AsyncSession, device_id: uuid.UUID, org_id: uuid.UUID) -> Device:
+    result = await db.execute(
+        select(Device).where(Device.id == device_id, Device.org_id == org_id, ~Device.is_revoked)
+    )
+    device = result.scalar_one_or_none()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return device

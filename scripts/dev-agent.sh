@@ -56,6 +56,13 @@ dedup_max_entries = 50
 exclude_patterns = ["event handler.*EOF", "event streamer.*EOF"]
 rate_limit_max = 20
 rate_limit_window_s = 30
+
+[tls]
+skip_time_check = true
+
+[update]
+auto_update = true
+check_interval_hours = 6
 EOF
   echo "Agent config created at ${CONFIG_PATH}"
 else

@@ -20,7 +20,9 @@ import {
 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { devicesApi } from '../api/devices'
+import { commandsApi } from '../api/commands'
 import { groupsApi } from '../api/groups'
+import { agentApi } from '../api/agent'
 import { useDevice, useUpdateDevice } from '../hooks/useDevices'
 import { useLatestMetric, useMetrics } from '../hooks/useMetrics'
 import { useAuthStore } from '../store/authStore'
@@ -109,6 +111,17 @@ export default function DeviceDetail() {
     queryFn: () => devicesApi.sshKeys(id!),
     enabled: Boolean(id),
   })
+  const { data: agentVersion } = useQuery({
+    queryKey: ['agent-version', device?.os_type, device?.arch],
+    queryFn: () => agentApi.version(mapPlatform(device?.os_type), device?.arch ?? 'amd64'),
+    enabled: Boolean(device),
+  })
+
+  const updateAvailable = Boolean(
+    device?.agent_version &&
+      agentVersion?.version &&
+      compareSemver(agentVersion.version, device.agent_version) > 0
+  )
 
   const saveConfig = useMutation({
     mutationFn: () => devicesApi.updateConfig(id!, configForm),
@@ -130,6 +143,13 @@ export default function DeviceDetail() {
       setCaptureStartedAt(Date.now())
       setIsCapturing(true)
       queryClient.invalidateQueries({ queryKey: ['device-screenshot', id] })
+    },
+  })
+
+  const updateAgent = useMutation({
+    mutationFn: () => commandsApi.dispatch(id!, 'update', {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['commands', id] })
     },
   })
   const updateMaintenance = useMutation({
@@ -275,13 +295,30 @@ export default function DeviceDetail() {
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-900 p-4 text-white shadow-lg">
-        <h3 className="mb-4 text-sm font-medium text-slate-200">System Info</h3>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-medium text-slate-200">System Info</h3>
+          <div className="flex items-center gap-2">
+            {updateAvailable && (
+              <span className="rounded-full bg-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-200">
+                Update Available
+              </span>
+            )}
+            <button
+              onClick={() => updateAgent.mutate()}
+              disabled={updateAgent.isPending}
+              className="rounded-lg border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:border-blue-400 hover:text-white disabled:opacity-50"
+            >
+              Update Agent
+            </button>
+          </div>
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <InfoRow label="OS" value={device.os_version ?? device.os_type} />
           <InfoRow label="Architecture" value={device.arch ?? '—'} />
           <InfoRow label="Hostname" value={device.hostname} />
           <InfoRow label="IP Address" value={device.ip_address ?? '—'} />
           <InfoRow label="Enrolled" value={format(new Date(device.enrolled_at), 'PPpp')} />
+          <InfoRow label="Agent Version" value={device.agent_version ?? '—'} />
           <EditableInfoRow
             label="Serial Number"
             field="serial_number"
@@ -809,6 +846,27 @@ function uptimeTone(value: number) {
   if (value >= 99) return 'text-emerald-500'
   if (value >= 95) return 'text-amber-500'
   return 'text-red-500'
+}
+
+function mapPlatform(osType?: string) {
+  if (!osType) return 'linux'
+  const lower = osType.toLowerCase()
+  if (lower.includes('windows')) return 'windows'
+  if (lower.includes('darwin') || lower.includes('mac')) return 'darwin'
+  return 'linux'
+}
+
+function compareSemver(a: string, b?: string | null) {
+  if (!b) return 1
+  const aParts = a.split('.').map((part) => Number(part))
+  const bParts = b.split('.').map((part) => Number(part))
+  for (let index = 0; index < 3; index += 1) {
+    const aValue = aParts[index] ?? 0
+    const bValue = bParts[index] ?? 0
+    if (aValue > bValue) return 1
+    if (aValue < bValue) return -1
+  }
+  return 0
 }
 
 function buildUptimeSegments(events: Array<{ event_type: string; timestamp: string; duration_secs: number | null }>) {

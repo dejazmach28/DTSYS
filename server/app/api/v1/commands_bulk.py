@@ -6,8 +6,10 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import require_admin
+from app.dependencies import require_admin, get_current_org_id
 from app.models.user import User
+from app.models.device import Device
+from sqlalchemy import select
 from app.services.command_service import CommandService
 
 router = APIRouter(prefix="/commands/bulk", tags=["commands"])
@@ -31,13 +33,22 @@ class BulkCommandRequest(BaseModel):
 async def dispatch_bulk_command(
     body: BulkCommandRequest,
     current_user: Annotated[User, Depends(require_admin)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     service = CommandService(db)
     dispatched: list[dict] = []
     failed: list[dict] = []
 
+    result = await db.execute(
+        select(Device.id).where(Device.org_id == current_org_id, Device.id.in_(body.device_ids))
+    )
+    allowed_ids = {row[0] for row in result.all()}
+
     for device_id in body.device_ids:
+        if device_id not in allowed_ids:
+            failed.append({"device_id": str(device_id), "error": "Device not found"})
+            continue
         try:
             async with db.begin_nested():
                 cmd, _sent = await service.dispatch_command(

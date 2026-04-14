@@ -76,8 +76,12 @@ class AuthService:
             bind_connection.unbind()
 
     def issue_tokens(self, user: User) -> dict:
+        org_id = str(user.active_org_id) if user.active_org_id else None
         return {
-            "access_token": create_access_token(str(user.id), {"role": user.role, "username": user.username}),
+            "access_token": create_access_token(
+                str(user.id),
+                {"role": user.role, "username": user.username, "org_id": org_id},
+            ),
             "refresh_token": create_refresh_token(str(user.id)),
             "token_type": "bearer",
         }
