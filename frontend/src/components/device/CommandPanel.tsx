@@ -118,7 +118,12 @@ export default function CommandPanel({ deviceId }: Props) {
         {quickActions.map(({ label, type, icon: Icon }) => (
           <button
             key={type}
-            onClick={() => dispatch.mutate({ command_type: type })}
+            onClick={() =>
+              dispatch.mutate({
+                command_type: type,
+                payload: type === 'sync_time' ? { target_time: new Date().toISOString() } : undefined,
+              })
+            }
             className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
           >
             <Icon size={12} />

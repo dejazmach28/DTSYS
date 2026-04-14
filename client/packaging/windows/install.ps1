@@ -44,6 +44,9 @@ dedup_max_entries = 50
 exclude_patterns = ["event handler.*EOF", "event streamer.*EOF"]
 rate_limit_max = 20
 rate_limit_window_s = 30
+
+[tls]
+skip_time_check = true
 "@
 Set-Content -Path $configPath -Value $configContent -Encoding ASCII
 

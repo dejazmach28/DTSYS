@@ -144,21 +144,45 @@ dedup_max_entries = 50
 exclude_patterns = ["event handler.*EOF", "event streamer.*EOF"]
 rate_limit_max = 20
 rate_limit_window_s = 30
+
+[tls]
+skip_time_check = true
 EOF
 chmod 600 "$CONFIG_PATH"
 
 if [ "$PLATFORM" = "linux" ]; then
+  if ! id -u dtsys-agent >/dev/null 2>&1; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin dtsys-agent
+  fi
+  chown dtsys-agent:dtsys-agent "$CONFIG_PATH"
   SERVICE_PATH="/etc/systemd/system/dtsys-agent.service"
   cat > "$SERVICE_PATH" <<EOF
 [Unit]
-Description=DTSYS Agent
-After=network.target
+Description=DTSYS Device Management Agent
+Documentation=https://github.com/dejazmach28/DTSYS
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=${BIN_PATH} --config ${CONFIG_PATH}
+ExecStart=/usr/local/bin/dtsys-agent --config /etc/dtsys/agent.toml
 Restart=always
-RestartSec=5
+RestartSec=10
+RestartPreventExitStatus=
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+User=dtsys-agent
+Group=dtsys-agent
+NoNewPrivileges=yes
+
+MemoryMax=256M
+CPUQuota=20%
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dtsys-agent
 
 [Install]
 WantedBy=multi-user.target
@@ -176,14 +200,22 @@ elif [ "$PLATFORM" = "darwin" ]; then
     <string>com.dtsys.agent</string>
     <key>ProgramArguments</key>
     <array>
-      <string>${BIN_PATH}</string>
+      <string>/usr/local/bin/dtsys-agent</string>
       <string>--config</string>
-      <string>${CONFIG_PATH}</string>
+      <string>/etc/dtsys/agent.toml</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/var/log/dtsys-agent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/dtsys-agent.log</string>
+    <key>ProcessType</key>
+    <string>Background</string>
   </dict>
 </plist>
 EOF

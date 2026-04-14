@@ -8,7 +8,11 @@ func TestCollectNTPStatus(t *testing.T) {
 	if status.NTPServer == "" {
 		t.Fatal("expected NTP server to be populated")
 	}
-	if status.OffsetMS < -86400000 || status.OffsetMS > 86400000 {
-		t.Fatalf("unexpected offset: %v", status.OffsetMS)
+	offset := status.EstimatedOffsetMS
+	if offset == 0 {
+		offset = status.OffsetMS
+	}
+	if offset < -86400000 || offset > 86400000 {
+		t.Fatalf("unexpected offset: %v", offset)
 	}
 }

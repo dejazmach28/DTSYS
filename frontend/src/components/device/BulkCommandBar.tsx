@@ -86,7 +86,12 @@ export default function BulkCommandBar({ selectedIds, onClear }: Props) {
           <ActionButton onClick={() => setIsShellModalOpen(true)} icon={Play} label="Run Command" />
           <ActionButton onClick={() => quickAction('reboot')} icon={RotateCcw} label="Reboot" disabled={bulkDispatch.isPending} />
           <ActionButton onClick={() => quickAction('update_check')} icon={RefreshCw} label="Check Updates" disabled={bulkDispatch.isPending} />
-          <ActionButton onClick={() => quickAction('sync_time')} icon={Clock3} label="Sync Time" disabled={bulkDispatch.isPending} />
+          <ActionButton
+            onClick={() => quickAction('sync_time', { target_time: new Date().toISOString() })}
+            icon={Clock3}
+            label="Sync Time"
+            disabled={bulkDispatch.isPending}
+          />
           <ActionButton
             onClick={() => navigate(`/compare?ids=${selectedIds.slice(0, 4).join(',')}`)}
             icon={Columns3}

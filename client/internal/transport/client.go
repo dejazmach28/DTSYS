@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -26,6 +27,7 @@ type Client struct {
 	apiKey    string
 	onCommand CommandHandler
 	onConfig  ConfigUpdateHandler
+	tlsConfig *tls.Config
 
 	conn    *websocket.Conn
 	mu      sync.Mutex
@@ -37,13 +39,14 @@ type Client struct {
 	writeDone chan struct{}
 }
 
-func NewClient(serverURL, deviceID, apiKey string, onCommand CommandHandler, onConfig ConfigUpdateHandler) *Client {
+func NewClient(serverURL, deviceID, apiKey string, tlsConfig *tls.Config, onCommand CommandHandler, onConfig ConfigUpdateHandler) *Client {
 	return &Client{
 		serverURL: serverURL,
 		deviceID:  deviceID,
 		apiKey:    apiKey,
 		onCommand: onCommand,
 		onConfig:  onConfig,
+		tlsConfig: tlsConfig,
 		sendCh:    make(chan Message, 256),
 	}
 }
@@ -95,7 +98,10 @@ func (c *Client) connect(ctx context.Context) error {
 		return err
 	}
 
-	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+		TLSClientConfig:  c.tlsConfig,
+	}
 	conn, _, err := dialer.DialContext(ctx, wsURL, nil)
 	if err != nil {
 		return fmt.Errorf("dial %s: %w", wsURL, err)

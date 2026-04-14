@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -57,14 +58,17 @@ func main() {
 		return runtimeCfg.Config()
 	})
 
+	tlsConfig := transport.BuildTLSConfig(cfg.Server.URL, cfg.TLS.SkipTimeCheck)
+
 	// Register if not yet registered
 	if cfg.Agent.DeviceID == "" || cfg.Agent.APIKey == "" {
 		slog.Info("no device ID found, registering with server")
-		if err := register(cfg, *configPath); err != nil {
+		if err := register(cfg, *configPath, tlsConfig); err != nil {
 			slog.Error("registration failed", "error", err)
 			os.Exit(1)
 		}
 	}
+	runStartupChecks(cfg, tlsConfig)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -73,6 +77,7 @@ func main() {
 		cfg.Server.URL,
 		cfg.Agent.DeviceID,
 		cfg.Agent.APIKey,
+		tlsConfig,
 		func(cmd transport.IncomingCommand) {
 			slog.Info("executing command", "type", cmd.CommandType, "id", cmd.CommandID)
 			result := executor.Execute(ctx, cmd, wsClient.Send)
@@ -162,7 +167,7 @@ func (h *forwardingHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
-func register(cfg *config.Config, cfgPath string) error {
+func register(cfg *config.Config, cfgPath string, tlsConfig *tls.Config) error {
 	osInfo, err := collector.CollectOSInfo()
 	if err != nil {
 		return fmt.Errorf("collect os info: %w", err)
@@ -173,7 +178,12 @@ func register(cfg *config.Config, cfgPath string) error {
 	apiURL := strings.TrimRight(cfg.Server.URL, "/")
 	apiURL = strings.Replace(apiURL, "wss://", "https://", 1)
 	apiURL = strings.Replace(apiURL, "ws://", "http://", 1)
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
+	}
 	attempt := 0
 	backoff := 5 * time.Second
 
@@ -226,6 +236,37 @@ func register(cfg *config.Config, cfgPath string) error {
 			}
 		}
 	}
+}
+
+func runStartupChecks(cfg *config.Config, tlsConfig *tls.Config) {
+	slog.Info("running startup checks")
+	if cfg.Agent.DeviceID == "" || cfg.Agent.APIKey == "" {
+		slog.Error("config missing device_id or api_key — re-enroll this device")
+		os.Exit(1)
+	}
+
+	apiURL := strings.TrimRight(cfg.Server.URL, "/")
+	apiURL = strings.Replace(apiURL, "wss://", "https://", 1)
+	apiURL = strings.Replace(apiURL, "ws://", "http://", 1)
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL+"/health", nil)
+	if err != nil {
+		slog.Warn("startup check failed", "error", err)
+	} else if resp, err := client.Do(req); err != nil {
+		slog.Warn("server not reachable at startup — will retry in background", "error", err)
+	} else {
+		resp.Body.Close()
+		slog.Info("server reachable", "status", resp.StatusCode)
+	}
+	slog.Info("system time", "time", time.Now().UTC().Format(time.RFC3339))
 }
 
 type registerResponse struct {
@@ -479,6 +520,7 @@ func sendProcesses(client *transport.Client) {
 func updateLoop(ctx context.Context, cfg *config.Config) {
 	ticker := time.NewTicker(6 * time.Hour)
 	defer ticker.Stop()
+	tlsConfig := transport.BuildTLSConfig(cfg.Server.URL, cfg.TLS.SkipTimeCheck)
 
 	check := func() bool {
 		updateCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -490,6 +532,7 @@ func updateLoop(ctx context.Context, cfg *config.Config) {
 			AgentVersion,
 			cfg.Agent.DeviceID,
 			cfg.Agent.APIKey,
+			tlsConfig,
 		)
 		if err != nil {
 			slog.Warn("agent update check failed", "error", err)

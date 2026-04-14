@@ -137,13 +137,31 @@ class MessageHandler:
     async def _handle_ntp(self, device: Device, data: dict) -> None:
         from app.config import get_settings
         settings = get_settings()
-        offset_ms = abs(data.get("offset_ms", 0))
+        offset_ms = abs(data.get("estimated_offset_ms", data.get("offset_ms", 0)))
         if offset_ms > settings.ALERT_NTP_OFFSET_MS:
             await self.alert_service.create_alert(
                 device=device,
                 alert_type="time_drift",
                 severity="warning",
                 message=f"NTP offset is {offset_ms:.1f}ms (threshold: {settings.ALERT_NTP_OFFSET_MS}ms)",
+            )
+        clock_usable = data.get("clock_usable", True)
+        if not clock_usable:
+            await self.alert_service.create_alert(
+                device=device,
+                alert_type="clock_skew",
+                severity="warning",
+                message=f"System clock is off by ~{offset_ms/1000:.0f}s — run Sync Time to fix",
+            )
+        else:
+            await self.db.execute(
+                update(Alert)
+                .where(
+                    Alert.device_id == device.id,
+                    Alert.alert_type == "clock_skew",
+                    ~Alert.is_resolved,
+                )
+                .values(is_resolved=True, resolved_at=datetime.now(timezone.utc))
             )
 
     async def _handle_command_output(self, device: Device, data: dict) -> None:

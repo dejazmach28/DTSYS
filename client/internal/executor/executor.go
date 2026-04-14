@@ -57,7 +57,7 @@ func Execute(ctx context.Context, cmd transport.IncomingCommand, send func(trans
 	case "update_check":
 		out, exitCode, err = runUpdateCheck(execCtx)
 	case "sync_time":
-		out, exitCode, err = runSyncTime(execCtx)
+		out, exitCode, err = runSyncTime(execCtx, cmd.Payload)
 	case "screenshot":
 		out, exitCode, err = runScreenshot(execCtx, cmd, send)
 	case "request_process_list":
@@ -194,7 +194,8 @@ func runUpdateCheck(ctx context.Context) ([]byte, int, error) {
 	return []byte(output), exitCode, nil
 }
 
-func runSyncTime(ctx context.Context) ([]byte, int, error) {
+func runSyncTime(ctx context.Context, payload map[string]interface{}) ([]byte, int, error) {
+	targetTime, _ := payload["target_time"].(string)
 	switch runtime.GOOS {
 	case "windows":
 		return runSingleCommand(ctx, exec.CommandContext(ctx, "w32tm", "/resync", "/force"))
@@ -213,6 +214,13 @@ func runSyncTime(ctx context.Context) ([]byte, int, error) {
 				continue
 			}
 			out, exitCode, err := runSingleCommand(ctx, cmd)
+			outputs = append(outputs, strings.TrimSpace(string(out)))
+			if err == nil && exitCode == 0 {
+				return []byte(strings.Join(compactStrings(outputs), "\n")), 0, nil
+			}
+		}
+		if targetTime != "" {
+			out, exitCode, err := runSingleCommand(ctx, exec.CommandContext(ctx, "date", "-s", targetTime))
 			outputs = append(outputs, strings.TrimSpace(string(out)))
 			if err == nil && exitCode == 0 {
 				return []byte(strings.Join(compactStrings(outputs), "\n")), 0, nil

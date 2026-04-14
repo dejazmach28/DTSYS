@@ -2,6 +2,7 @@ package updater
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,10 +21,17 @@ type versionResponse struct {
 }
 
 // CheckAndUpdate downloads and stages a newer agent binary when one is available.
-func CheckAndUpdate(ctx context.Context, serverURL, currentVersion, deviceID, apiKey string) (bool, error) {
+func CheckAndUpdate(ctx context.Context, serverURL, currentVersion, deviceID, apiKey string, tlsConfig *tls.Config) (bool, error) {
 	endpoint, err := buildVersionURL(serverURL)
 	if err != nil {
 		return false, err
+	}
+
+	client := http.DefaultClient
+	if tlsConfig != nil {
+		client = &http.Client{
+			Transport: &http.Transport{TLSClientConfig: tlsConfig},
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
@@ -37,7 +45,7 @@ func CheckAndUpdate(ctx context.Context, serverURL, currentVersion, deviceID, ap
 		req.Header.Set("X-Device-ID", deviceID)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return false, err
 	}
@@ -84,7 +92,7 @@ func CheckAndUpdate(ctx context.Context, serverURL, currentVersion, deviceID, ap
 	}
 	tempPath := tempFile.Name()
 
-	if err := downloadBinary(ctx, downloadURL, apiKey, tempFile); err != nil {
+	if err := downloadBinary(ctx, downloadURL, apiKey, tempFile, client); err != nil {
 		tempFile.Close()
 		_ = os.Remove(tempPath)
 		return false, err
@@ -144,7 +152,7 @@ func resolveDownloadURL(baseURL, raw string) (string, error) {
 	return parsedBase.ResolveReference(parsedURL).String(), nil
 }
 
-func downloadBinary(ctx context.Context, downloadURL, apiKey string, file *os.File) error {
+func downloadBinary(ctx context.Context, downloadURL, apiKey string, file *os.File, client *http.Client) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
 		return err
@@ -153,7 +161,7 @@ func downloadBinary(ctx context.Context, downloadURL, apiKey string, file *os.Fi
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

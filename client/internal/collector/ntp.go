@@ -11,12 +11,15 @@ const ntpServer = "pool.ntp.org:123"
 
 // CollectNTPStatus checks time sync by querying an NTP server directly.
 func CollectNTPStatus() transport.NTPStatusData {
+	systemTime := time.Now().UTC()
 	offset, err := queryNTPOffset(ntpServer)
 	if err != nil {
 		return transport.NTPStatusData{
-			IsSynced:  false,
-			OffsetMS:  0,
-			NTPServer: ntpServer,
+			IsSynced:    false,
+			OffsetMS:    0,
+			NTPServer:   ntpServer,
+			SystemTime:  systemTime.Format(time.RFC3339),
+			ClockUsable: true,
 		}
 	}
 
@@ -24,11 +27,16 @@ func CollectNTPStatus() transport.NTPStatusData {
 	if absOffset < 0 {
 		absOffset = -absOffset
 	}
+	estimatedOffset := float64(offset.Milliseconds())
+	clockUsable := absOffset < 5*time.Minute
 
 	return transport.NTPStatusData{
-		IsSynced:  absOffset < 500*time.Millisecond,
-		OffsetMS:  float64(offset.Milliseconds()),
-		NTPServer: ntpServer,
+		IsSynced:          absOffset < 500*time.Millisecond,
+		OffsetMS:          estimatedOffset,
+		NTPServer:         ntpServer,
+		SystemTime:        systemTime.Format(time.RFC3339),
+		EstimatedOffsetMS: estimatedOffset,
+		ClockUsable:       clockUsable,
 	}
 }
 

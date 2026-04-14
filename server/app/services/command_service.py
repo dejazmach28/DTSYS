@@ -31,6 +31,9 @@ class CommandService:
         if command_type not in ALLOWED_COMMAND_TYPES:
             raise BadRequestError(f"Command type must be one of: {ALLOWED_COMMAND_TYPES}")
 
+        if command_type == "sync_time" and "target_time" not in payload:
+            payload = {**payload, "target_time": datetime.now(timezone.utc).isoformat()}
+
         # Verify device exists
         result = await self.db.execute(
             select(Device).where(Device.id == device_id, ~Device.is_revoked)

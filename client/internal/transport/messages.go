@@ -15,6 +15,9 @@ const (
 	MsgTypeCommandResult     = "command_result"
 	MsgTypeScreenshotResult  = "screenshot_result"
 
+	// Command types
+	MsgTypeSyncTime = "sync_time"
+
 	// Server -> Client
 	MsgTypeCommand           = "command"
 	MsgTypeConfigUpdate      = "config_update"
@@ -63,9 +66,12 @@ type EventData struct {
 }
 
 type NTPStatusData struct {
-	IsSynced  bool    `json:"is_synced"`
-	OffsetMS  float64 `json:"offset_ms"`
-	NTPServer string  `json:"ntp_server,omitempty"`
+	IsSynced          bool    `json:"is_synced"`
+	OffsetMS          float64 `json:"offset_ms"`
+	NTPServer         string  `json:"ntp_server,omitempty"`
+	SystemTime        string  `json:"system_time,omitempty"`
+	EstimatedOffsetMS float64 `json:"estimated_offset_ms,omitempty"`
+	ClockUsable       bool    `json:"clock_usable,omitempty"`
 }
 
 type NetworkInterface struct {

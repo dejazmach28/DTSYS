@@ -12,6 +12,7 @@ type Config struct {
 	Agent   AgentConfig   `toml:"agent"`
 	Collect CollectConfig `toml:"collect"`
 	Events  EventsConfig  `toml:"events"`
+	TLS     TLSConfig     `toml:"tls"`
 }
 
 type ServerConfig struct {
@@ -37,6 +38,10 @@ type EventsConfig struct {
 	RateLimitWindowS int      `toml:"rate_limit_window_s"` // default 30
 }
 
+type TLSConfig struct {
+	SkipTimeCheck bool `toml:"skip_time_check"` // default true
+}
+
 func Load(path string) (*Config, error) {
 	cfg := &Config{
 		Collect: CollectConfig{
@@ -49,6 +54,9 @@ func Load(path string) (*Config, error) {
 			ExcludePatterns:  []string{"event handler.*EOF", "event streamer.*EOF"},
 			RateLimitMax:     20,
 			RateLimitWindowS: 30,
+		},
+		TLS: TLSConfig{
+			SkipTimeCheck: true,
 		},
 	}
 
