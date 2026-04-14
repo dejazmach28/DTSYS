@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import require_admin
+from app.dependencies import get_current_org_id, require_admin
 from app.models.notification_rule import NotificationRule
 from app.models.user import User
 
@@ -43,9 +43,14 @@ class NotificationRuleUpdateRequest(BaseModel):
 @router.get("")
 async def list_notification_rules(
     current_user: Annotated[User, Depends(require_admin)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    result = await db.execute(select(NotificationRule).order_by(NotificationRule.created_at.desc()))
+    result = await db.execute(
+        select(NotificationRule)
+        .where(NotificationRule.org_id == current_org_id)
+        .order_by(NotificationRule.created_at.desc())
+    )
     return [_fmt_rule(rule) for rule in result.scalars().all()]
 
 
@@ -53,9 +58,10 @@ async def list_notification_rules(
 async def create_notification_rule(
     body: NotificationRuleRequest,
     current_user: Annotated[User, Depends(require_admin)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    rule = NotificationRule(**body.model_dump())
+    rule = NotificationRule(org_id=current_org_id, **body.model_dump())
     db.add(rule)
     await db.commit()
     await db.refresh(rule)

@@ -22,8 +22,10 @@ from app.models.device import Device
 from app.models.notification_rule import NotificationRule
 from app.models.software import SoftwareInventory
 from app.models.user import User
+from app.models.organization import Organization, OrganizationMember
 
 ADMIN_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+DEFAULT_ORG_ID = uuid.UUID("00000000-0000-0000-0000-000000000010")
 
 
 class DummyScalarResult:
@@ -56,12 +58,25 @@ class DummyResult:
 
 class DummySession:
     def __init__(self):
+        default_org = Organization(
+            id=DEFAULT_ORG_ID,
+            name="Default",
+            slug="default",
+            owner_id=ADMIN_ID,
+        )
         admin_user = User(
             id=ADMIN_ID,
             username="admin",
             password_hash=hash_password("changeme"),
             role="admin",
             is_active=True,
+            active_org_id=DEFAULT_ORG_ID,
+        )
+        admin_member = OrganizationMember(
+            id=uuid.uuid4(),
+            org_id=DEFAULT_ORG_ID,
+            user_id=ADMIN_ID,
+            role="owner",
         )
         self._store = {
             User: [admin_user],
@@ -71,6 +86,8 @@ class DummySession:
             AuditLog: [],
             NotificationRule: [],
             SoftwareInventory: [],
+            Organization: [default_org],
+            OrganizationMember: [admin_member],
         }
 
     async def execute(self, statement):
@@ -193,6 +210,8 @@ def _seed_defaults(obj) -> None:
         setattr(obj, "status", "offline")
     if hasattr(obj, "payload") and getattr(obj, "payload") is None:
         setattr(obj, "payload", {})
+    if hasattr(obj, "org_id") and getattr(obj, "org_id") is None:
+        setattr(obj, "org_id", DEFAULT_ORG_ID)
 
 
 def _matches(obj, criterion) -> bool:
@@ -202,6 +221,9 @@ def _matches(obj, criterion) -> bool:
     if isinstance(criterion, BinaryExpression):
         key = _extract_key(criterion.left)
         value = _extract_value(criterion.right)
+        if key and not hasattr(obj, key):
+            # Cross-table JOIN criterion — skip (real DB enforces via JOIN)
+            return True
         current = getattr(obj, key) if key else None
         if criterion.operator == operators.eq:
             return current == value
@@ -252,6 +274,8 @@ TABLE_MODELS = {
     "audit_log": AuditLog,
     "notification_rules": NotificationRule,
     "software_inventory": SoftwareInventory,
+    "organizations": Organization,
+    "organization_members": OrganizationMember,
 }
 
 
@@ -301,4 +325,7 @@ async def client(fake_redis: FakeRedis, db_session: DummySession) -> AsyncIterat
 
 @pytest.fixture
 def admin_token() -> str:
-    return create_access_token(str(ADMIN_ID), {"role": "admin", "username": "admin"})
+    return create_access_token(
+        str(ADMIN_ID),
+        {"role": "admin", "username": "admin", "org_id": str(DEFAULT_ORG_ID)},
+    )

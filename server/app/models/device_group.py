@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Uuid, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, String, Uuid, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -10,9 +10,14 @@ from app.db.session import Base
 
 class DeviceGroup(Base):
     __tablename__ = "device_groups"
+    __table_args__ = (
+        UniqueConstraint("org_id", "name", name="uq_device_group_org_name"),
+        Index("ix_device_groups_org_id", "org_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    org_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500))
     color: Mapped[str] = mapped_column(String(16), nullable=False, default="#3b82f6")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

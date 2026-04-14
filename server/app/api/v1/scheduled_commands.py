@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import require_admin
+from app.dependencies import get_current_org_id, require_admin
 from app.models.scheduled_command import ScheduledCommand
 from app.models.user import User
 from app.services.audit_service import log_action
@@ -36,10 +36,13 @@ class ScheduledCommandUpdateRequest(BaseModel):
 @router.get("")
 async def list_scheduled_commands(
     current_user: Annotated[User, Depends(require_admin)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     result = await db.execute(
-        select(ScheduledCommand).order_by(ScheduledCommand.created_at.desc())
+        select(ScheduledCommand)
+        .where(ScheduledCommand.org_id == current_org_id)
+        .order_by(ScheduledCommand.created_at.desc())
     )
     return [_fmt_scheduled_command(item) for item in result.scalars().all()]
 
@@ -48,10 +51,12 @@ async def list_scheduled_commands(
 async def create_scheduled_command(
     body: ScheduledCommandCreateRequest,
     current_user: Annotated[User, Depends(require_admin)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     next_run = _compute_next_run(body.cron_expression)
     scheduled = ScheduledCommand(
+        org_id=current_org_id,
         device_id=body.device_id,
         command_type=body.command_type,
         payload=body.payload,

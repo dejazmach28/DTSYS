@@ -19,6 +19,7 @@ import Users from './pages/Users'
 import Inventory from './pages/Inventory'
 import CommandLibrary from './pages/CommandLibrary'
 import CustomDashboard from './pages/CustomDashboard'
+import Organizations from './pages/Organizations'
 import { devicesApi } from './api/devices'
 import { useAuthStore } from './store/authStore'
 
@@ -102,6 +103,7 @@ export default function App() {
             <Route path="software-updates" element={withBoundary(<SoftwareUpdates />)} />
             <Route path="scheduled" element={withBoundary(<ScheduledCommands />)} />
             <Route path="users" element={withBoundary(<Users />)} />
+            <Route path="organizations" element={withBoundary(<Organizations />)} />
             <Route path="settings" element={withBoundary(<Settings />)} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

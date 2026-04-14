@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import get_current_user, require_admin
+from app.dependencies import get_current_user, get_current_org_id, require_admin
 from app.models.device import Device
 from app.models.device_group import DeviceGroup, DeviceGroupMembership
 from app.models.user import User
@@ -34,6 +34,7 @@ class GroupDevicesRequest(BaseModel):
 @router.get("")
 async def list_groups(
     current_user: Annotated[User, Depends(get_current_user)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     result = await db.execute(
@@ -42,6 +43,7 @@ async def list_groups(
             func.count(DeviceGroupMembership.id).label("member_count"),
         )
         .outerjoin(DeviceGroupMembership, DeviceGroupMembership.group_id == DeviceGroup.id)
+        .where(DeviceGroup.org_id == current_org_id)
         .group_by(DeviceGroup.id)
         .order_by(DeviceGroup.name.asc())
     )
@@ -62,9 +64,11 @@ async def list_groups(
 async def create_group(
     body: GroupRequest,
     current_user: Annotated[User, Depends(require_admin)],
+    current_org_id: Annotated[uuid.UUID, Depends(get_current_org_id)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     group = DeviceGroup(
+        org_id=current_org_id,
         name=body.name,
         description=body.description,
         color=body.color,

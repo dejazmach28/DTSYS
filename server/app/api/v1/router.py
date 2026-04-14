@@ -16,6 +16,8 @@ from app.api.v1 import (
     events,
     metrics,
     notification_rules,
+    organizations,
+    push_tokens,
     scheduled_commands,
     software_catalog,
     software_updates,
@@ -51,3 +53,5 @@ router.include_router(scheduled_commands.router)
 router.include_router(notification_rules.router)
 router.include_router(software_catalog.router)
 router.include_router(software_updates.router)
+router.include_router(organizations.router)
+router.include_router(push_tokens.router)
