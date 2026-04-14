@@ -34,6 +34,9 @@ func CollectEvents(since time.Time) ([]transport.EventData, error) {
 	)
 
 	addEvent := func(event transport.EventData) {
+		if shouldSkipEvent(event.Source, event.Message) {
+			return
+		}
 		key := event.EventType + "|" + event.Source + "|" + event.Message
 		if _, ok := seen[key]; ok {
 			return
@@ -44,13 +47,18 @@ func CollectEvents(since time.Time) ([]transport.EventData, error) {
 
 	if out, err := exec.Command("journalctl", "--no-pager", "-o", "short-iso", "-p", "err", "-S", since.Format("2006-01-02 15:04:05"), "--lines", "200").CombinedOutput(); err == nil {
 		atLeastOneRead = true
-		scanner := bufio.NewScanner(bytes.NewReader(out))
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line == "" {
-				continue
+		trimmed := strings.TrimSpace(string(out))
+		if trimmed == "" || trimmed == "-- No entries --" {
+			// No entries is not an error; just return empty events.
+		} else {
+			scanner := bufio.NewScanner(bytes.NewReader(out))
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if line == "" {
+					continue
+				}
+				addEvent(parseLinuxJournalLine(line))
 			}
-			addEvent(parseLinuxJournalLine(line))
 		}
 	} else {
 		errs = append(errs, fmt.Sprintf("journalctl: %v", err))

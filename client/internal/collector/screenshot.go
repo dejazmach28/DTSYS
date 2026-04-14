@@ -1,9 +1,14 @@
 package collector
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
 	"os"
 	"os/exec"
 	"runtime"
@@ -71,35 +76,134 @@ func captureDarwinScreenshot(ctx context.Context) ([]byte, error) {
 }
 
 func captureLinuxScreenshot(ctx context.Context) ([]byte, error) {
-	tempFile, err := os.CreateTemp("", "dtsys-screenshot-*.jpg")
+	if os.Getenv("DISPLAY") == "" {
+		return generatePlaceholder(), nil
+	}
+
+	tempFile, err := os.CreateTemp("", "dtsys-screenshot-*")
 	if err != nil {
 		return nil, err
 	}
-	path := tempFile.Name()
+	basePath := tempFile.Name()
 	_ = tempFile.Close()
-	defer os.Remove(path)
+	defer os.Remove(basePath)
 
-	commands := [][]string{
-		{"scrot", path},
-		{"import", "-window", "root", path},
+	type cmdSpec struct {
+		bin  string
+		args []string
+	}
+
+	commands := []cmdSpec{
+		{bin: "scrot", args: []string{"-o", basePath + ".jpg"}},
+		{bin: "gnome-screenshot", args: []string{"-f", basePath + ".png", "--display=:0"}},
+		{bin: "convert", args: []string{"xwd:-", "jpg:" + basePath + ".jpg"}},
+		{bin: "ffmpeg", args: []string{"-f", "x11grab", "-i", ":0", "-vframes", "1", basePath + ".jpg"}},
 	}
 
 	var outputs []string
-	for _, args := range commands {
-		if _, lookErr := exec.LookPath(args[0]); lookErr != nil {
-			outputs = append(outputs, fmt.Sprintf("%s: not available", args[0]))
-			continue
-		}
-		out, runErr := exec.CommandContext(ctx, args[0], args[1:]...).CombinedOutput()
-		if runErr == nil {
-			data, readErr := os.ReadFile(path)
-			if readErr != nil {
-				return nil, fmt.Errorf("read screenshot: %w", readErr)
+
+	if _, err := exec.LookPath("xwd"); err == nil {
+		if _, err := exec.LookPath("convert"); err == nil {
+			out, runErr := exec.CommandContext(ctx, "xwd", "-root", "-silent", "-display", ":0").Output()
+			if runErr == nil {
+				convertCmd := exec.CommandContext(ctx, "convert", "xwd:-", "jpg:"+basePath+".jpg")
+				convertCmd.Stdin = bytes.NewReader(out)
+				if convertErr := convertCmd.Run(); convertErr == nil {
+					target := basePath + ".jpg"
+					if data, readErr := os.ReadFile(target); readErr == nil {
+						_ = os.Remove(target)
+						return data, nil
+					}
+				} else {
+					outputs = append(outputs, fmt.Sprintf("convert: %s", convertErr.Error()))
+				}
+			} else {
+				outputs = append(outputs, fmt.Sprintf("xwd: %s", runErr.Error()))
 			}
-			return data, nil
 		}
-		outputs = append(outputs, fmt.Sprintf("%s: %s", args[0], strings.TrimSpace(string(out))))
 	}
 
-	return nil, fmt.Errorf("linux screenshot failed: %s", strings.Join(outputs, "; "))
+	for _, spec := range commands {
+		if spec.bin == "convert" {
+			continue
+		}
+		if _, lookErr := exec.LookPath(spec.bin); lookErr != nil {
+			outputs = append(outputs, fmt.Sprintf("%s: not available", spec.bin))
+			continue
+		}
+		out, runErr := exec.CommandContext(ctx, spec.bin, spec.args...).CombinedOutput()
+		if runErr == nil {
+			target := spec.args[len(spec.args)-1]
+			if strings.HasSuffix(target, ".png") {
+				img, readErr := os.Open(target)
+				if readErr != nil {
+					return nil, fmt.Errorf("read screenshot: %w", readErr)
+				}
+				defer img.Close()
+				decoded, _, decErr := image.Decode(img)
+				if decErr != nil {
+					return nil, fmt.Errorf("decode screenshot: %w", decErr)
+				}
+				var buf bytes.Buffer
+				if encErr := jpeg.Encode(&buf, decoded, &jpeg.Options{Quality: 85}); encErr != nil {
+					return nil, fmt.Errorf("encode screenshot: %w", encErr)
+				}
+				_ = os.Remove(target)
+				return buf.Bytes(), nil
+			}
+			data, readErr := os.ReadFile(target)
+			if readErr == nil {
+				_ = os.Remove(target)
+				return data, nil
+			}
+			return nil, fmt.Errorf("read screenshot: %w", readErr)
+		}
+		outputs = append(outputs, fmt.Sprintf("%s: %s", spec.bin, strings.TrimSpace(string(out))))
+	}
+
+	return generatePlaceholder(), nil
+}
+
+func generatePlaceholder() []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 400, 300))
+	draw.Draw(img, img.Bounds(), &image.Uniform{C: color.RGBA{R: 200, G: 200, B: 200, A: 255}}, image.Point{}, draw.Src)
+	drawText(img, 40, 140, "NO DISPLAY / HEADLESS", color.RGBA{R: 60, G: 60, B: 60, A: 255})
+	var buf bytes.Buffer
+	_ = jpeg.Encode(&buf, img, &jpeg.Options{Quality: 80})
+	return buf.Bytes()
+}
+
+func drawText(img *image.RGBA, x, y int, text string, col color.Color) {
+	for _, ch := range text {
+		drawChar(img, x, y, ch, col)
+		x += 6
+	}
+}
+
+func drawChar(img *image.RGBA, x, y int, ch rune, col color.Color) {
+	pattern := font5x7[ch]
+	for row := 0; row < 7; row++ {
+		for colIdx := 0; colIdx < 5; colIdx++ {
+			if pattern[row]&(1<<(4-colIdx)) != 0 {
+				img.Set(x+colIdx, y+row, col)
+			}
+		}
+	}
+}
+
+var font5x7 = map[rune][7]byte{
+	'A': {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11},
+	'D': {0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E},
+	'E': {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F},
+	'H': {0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11},
+	'I': {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x1F},
+	'L': {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F},
+	'N': {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11},
+	'O': {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E},
+	'P': {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10},
+	'R': {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11},
+	'S': {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E},
+	'Y': {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04},
+	' ': {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+	'/': {0x01, 0x02, 0x04, 0x08, 0x10, 0x00, 0x00},
 }

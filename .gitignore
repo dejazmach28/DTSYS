@@ -35,6 +35,7 @@ frontend/build/
 nginx/ssl/*.crt
 nginx/ssl/*.key
 nginx/ssl/*.pem
+/tmp/dtsys-test.toml
 
 # IDE
 .vscode/

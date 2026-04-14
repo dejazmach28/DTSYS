@@ -33,6 +33,7 @@ class MessageHandler:
     async def handle(self, device: Device, message: dict) -> dict | None:
         msg_type = message.get("type")
         payload = message.get("data", {})
+        log.debug("ws_message", device_id=str(device.id), type=msg_type)
 
         match msg_type:
             case ClientMessageType.TELEMETRY:
@@ -55,6 +56,8 @@ class MessageHandler:
                 return await self._handle_command_result(device, payload)
             case ClientMessageType.SCREENSHOT_RESULT:
                 return await self._handle_screenshot_result(device, payload)
+            case "pong":
+                return None
             case _:
                 log.warning("unknown_message_type", type=msg_type, device_id=str(device.id))
                 return None
@@ -84,6 +87,7 @@ class MessageHandler:
 
         await self.db.flush()
         await self.alert_service.evaluate_metrics(device, metric)
+        await auto_resolve_alerts(self.db, device.id, data)
 
     async def _handle_software(self, device: Device, data: dict) -> None:
         # Full replace: delete existing, insert new batch
@@ -172,6 +176,7 @@ class MessageHandler:
                 completed_at=datetime.now(timezone.utc),
             )
         )
+        log.info("command_result", device_id=str(device.id), command_id=cmd_id, exit_code=exit_code)
 
         if command.command_type == "sync_time" and exit_code == 0:
             result = await self.db.execute(
@@ -269,3 +274,40 @@ def _extract_ip(value: str) -> ipaddress.IPv4Address | None:
     if isinstance(ip, ipaddress.IPv4Address):
         return ip
     return None
+
+
+async def auto_resolve_alerts(db: AsyncSession, device_id: uuid.UUID, telemetry: dict) -> None:
+    now = datetime.now(timezone.utc)
+    cpu = telemetry.get("cpu_percent")
+    if cpu is not None and cpu < 80.0:
+        await db.execute(
+            update(Alert)
+            .where(
+                Alert.device_id == device_id,
+                Alert.alert_type == "high_cpu",
+                ~Alert.is_resolved,
+            )
+            .values(is_resolved=True, resolved_at=now)
+        )
+    ram = telemetry.get("ram_percent")
+    if ram is not None and ram < 85.0:
+        await db.execute(
+            update(Alert)
+            .where(
+                Alert.device_id == device_id,
+                Alert.alert_type == "high_ram",
+                ~Alert.is_resolved,
+            )
+            .values(is_resolved=True, resolved_at=now)
+        )
+    disk = telemetry.get("disk_percent")
+    if disk is not None and disk < 90.0:
+        await db.execute(
+            update(Alert)
+            .where(
+                Alert.device_id == device_id,
+                Alert.alert_type == "high_disk",
+                ~Alert.is_resolved,
+            )
+            .values(is_resolved=True, resolved_at=now)
+        )

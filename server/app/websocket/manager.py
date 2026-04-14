@@ -19,7 +19,6 @@ class ConnectionManager:
         self._lock = asyncio.Lock()
 
     async def connect(self, device_id: uuid.UUID, websocket: WebSocket, ip: str | None = None) -> None:
-        await websocket.accept()
         async with self._lock:
             if device_id in self._connections:
                 # Disconnect old connection for same device

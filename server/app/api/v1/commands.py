@@ -1,6 +1,6 @@
 import uuid
 from typing import Annotated
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,8 +11,12 @@ from app.models.command import Command
 from app.dependencies import get_current_user
 from app.services.audit_service import log_action
 from app.services.command_service import CommandService
+from app.core.logging import get_logger
+from app.websocket.manager import manager
+from app.core.rate_limit import limiter
 
 router = APIRouter(prefix="/devices/{device_id}/commands", tags=["commands"])
+log = get_logger(__name__)
 
 
 class CommandRequest(BaseModel):
@@ -29,18 +33,30 @@ class CommandRequest(BaseModel):
 
 
 @router.post("")
+@limiter.limit("60/minute")
 async def dispatch_command(
     device_id: uuid.UUID,
     body: CommandRequest,
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     service = CommandService(db)
-    cmd = await service.dispatch_command(
+    cmd, sent = await service.dispatch_command(
         device_id=device_id,
         command_type=body.command_type,
         payload=body.payload,
         issued_by=current_user.id,
+        fail_if_offline=True,
+    )
+    log.info(
+        "command_dispatch",
+        command_id=str(cmd.id),
+        device_id=str(device_id),
+        command_type=body.command_type,
+        payload=body.payload,
+        connected=manager.is_connected(device_id),
+        sent=sent,
     )
     await log_action(
         db,

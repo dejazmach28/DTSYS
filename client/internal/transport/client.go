@@ -27,10 +27,10 @@ type Client struct {
 	onCommand CommandHandler
 	onConfig  ConfigUpdateHandler
 
-	conn   *websocket.Conn
-	mu     sync.Mutex
+	conn    *websocket.Conn
+	mu      sync.Mutex
 	writeMu sync.Mutex
-	closed bool
+	closed  bool
 
 	sendCh    chan Message
 	writeStop chan struct{}
@@ -44,7 +44,7 @@ func NewClient(serverURL, deviceID, apiKey string, onCommand CommandHandler, onC
 		apiKey:    apiKey,
 		onCommand: onCommand,
 		onConfig:  onConfig,
-		sendCh:    make(chan Message, 64),
+		sendCh:    make(chan Message, 256),
 	}
 }
 
@@ -59,7 +59,6 @@ func (c *Client) Run(ctx context.Context) {
 		default:
 		}
 
-		startedAt := time.Now()
 		if err := c.connect(ctx); err != nil {
 			slog.Error("websocket connect failed", "error", err)
 			wait := backoff.next()
@@ -72,15 +71,12 @@ func (c *Client) Run(ctx context.Context) {
 			continue
 		}
 
+		backoff.reset()
 		c.readLoop(ctx)
 		c.drainSendCh()
 
 		if ctx.Err() != nil {
 			return
-		}
-
-		if time.Since(startedAt) > 30*time.Second {
-			backoff.reset()
 		}
 
 		wait := backoff.next()
@@ -120,7 +116,9 @@ func (c *Client) connect(ctx context.Context) error {
 }
 
 func (c *Client) readLoop(ctx context.Context) {
+	var lastErr error
 	defer func() {
+		slog.Debug("readLoop exited", "reason", lastErr)
 		c.mu.Lock()
 		conn := c.conn
 		stop := c.writeStop
@@ -157,6 +155,7 @@ func (c *Client) readLoop(ctx context.Context) {
 		var raw map[string]json.RawMessage
 		err := conn.ReadJSON(&raw)
 		if err != nil {
+			lastErr = err
 			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				slog.Warn("websocket read error", "error", err)
 			}
@@ -205,7 +204,9 @@ func (c *Client) readLoop(ctx context.Context) {
 }
 
 func (c *Client) writePump() {
+	slog.Debug("writePump started")
 	defer func() {
+		slog.Debug("writePump exited")
 		if c.writeDone != nil {
 			close(c.writeDone)
 		}
@@ -252,6 +253,18 @@ func (c *Client) writePump() {
 
 // Send queues a message for sending. Non-blocking; drops if buffer full.
 func (c *Client) Send(msg Message) {
+	buffered := len(c.sendCh)
+	capacity := cap(c.sendCh)
+	if capacity > 0 && buffered >= (capacity*3)/4 && shouldDropWhenBusy(msg.Type) {
+		slog.Warn("send buffer busy, dropping message", "type", msg.Type)
+		return
+	}
+
+	if isCriticalMessage(msg.Type) {
+		c.sendCh <- msg
+		return
+	}
+
 	select {
 	case c.sendCh <- msg:
 	default:
@@ -304,6 +317,24 @@ func (c *Client) drainSendCh() {
 		default:
 			return
 		}
+	}
+}
+
+func isCriticalMessage(msgType string) bool {
+	switch msgType {
+	case MsgTypeEventReport, MsgTypeCommandResult, MsgTypeScreenshotResult:
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldDropWhenBusy(msgType string) bool {
+	switch msgType {
+	case MsgTypeTelemetry, MsgTypeProcessList, MsgTypeNTPStatus, MsgTypeNetworkInfo:
+		return true
+	default:
+		return false
 	}
 }
 

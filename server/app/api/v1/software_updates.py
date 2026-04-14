@@ -73,7 +73,7 @@ async def dispatch_updates(
         device = devices.get(device_id)
         if device is None:
             continue
-        command = await command_service.dispatch_command(
+        command, _sent = await command_service.dispatch_command(
             device_id=device_id,
             command_type="shell",
             payload={"command": _build_update_command(device.os_type, body.software_names)},

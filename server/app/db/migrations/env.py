@@ -6,10 +6,12 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from app.config import get_settings
 from app.db.session import Base
 from app.models import *  # noqa: F401,F403
 
 config = context.config
+settings = get_settings()
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -25,6 +27,7 @@ def _get_database_url() -> str:
 
 
 def run_migrations_offline() -> None:
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
         target_metadata=target_metadata,
@@ -46,6 +49,7 @@ def do_run_migrations(connection) -> None:
 
 async def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section, {})
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
     configuration["sqlalchemy.url"] = _get_database_url()
 
     connectable = async_engine_from_config(

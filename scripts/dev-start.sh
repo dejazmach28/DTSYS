@@ -121,6 +121,7 @@ REDIS_URL=redis://:${redis_password}@localhost:6379/0
 BASE_URL=http://localhost:8000
 EOF
     echo "Created .env with generated secrets"
+    echo ".env created - DO NOT COMMIT THIS FILE"
   fi
 
   ln -sf ../.env server/.env
@@ -170,6 +171,14 @@ install_frontend_deps() {
   echo "Frontend dependencies installed"
 }
 
+build_agent_binaries() {
+  if command -v go >/dev/null 2>&1; then
+    echo "Building agent binaries..."
+    (cd client && GOOS=linux GOARCH=amd64 go build -o ../dist/agents/dtsys-agent-linux-amd64 ./cmd/agent/ 2>/dev/null || true)
+    echo "Agent binaries built"
+  fi
+}
+
 run_prefixed() {
   local label="$1"
   local color="$2"
@@ -213,8 +222,10 @@ install_server_deps
 run_migrations
 install_frontend_deps
 
-run_prefixed "SERVER" "$CYAN" "cd '$ROOT_DIR/server' && .venv/bin/uvicorn app.main:app --reload --port 8000"
+build_agent_binaries
+run_prefixed "SERVER" "$CYAN" "cd '$ROOT_DIR/server' && .venv/bin/uvicorn app.main:app --reload --port 8000 --timeout-keep-alive 300"
 run_prefixed "FRONTEND" "$GREEN" "cd '$ROOT_DIR/frontend' && npm run dev"
+run_prefixed "WORKER" "$YELLOW" "cd '$ROOT_DIR/server' && .venv/bin/celery -A app.tasks.celery_app worker --loglevel=warning"
 
 if [ -f /tmp/dtsys-test.toml ]; then
   run_prefixed "AGENT" "$YELLOW" "cd '$ROOT_DIR/client' && go run ./cmd/agent/ --config /tmp/dtsys-test.toml"

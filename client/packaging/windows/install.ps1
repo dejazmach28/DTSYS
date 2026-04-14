@@ -38,6 +38,12 @@ enrollment_token = "$EnrollmentToken"
 telemetry_interval_secs = 60
 software_scan_interval_m = 60
 event_poll_interval_secs = 120
+
+[events]
+dedup_max_entries = 50
+exclude_patterns = ["event handler.*EOF", "event streamer.*EOF"]
+rate_limit_max = 20
+rate_limit_window_s = 30
 "@
 Set-Content -Path $configPath -Value $configContent -Encoding ASCII
 

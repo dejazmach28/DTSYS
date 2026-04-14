@@ -19,4 +19,4 @@ async def check_rate_limit(redis: Redis, key: str, limit: int, window_secs: int)
     current = await redis.incr(key)
     if current == 1:
         await redis.expire(key, window_secs)
-    return current <= limit
+    return current < limit

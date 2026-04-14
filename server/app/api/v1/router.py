@@ -4,12 +4,14 @@ from app.api.v1 import (
     activity_stream,
     admin,
     agent,
+    agent_download,
     alerts,
     auth,
     commands,
     commands_bulk,
     devices,
     downloads,
+    enroll,
     event_stream,
     events,
     metrics,
@@ -38,7 +40,9 @@ router.include_router(event_stream.router)
 router.include_router(activity_stream.router)
 router.include_router(admin.router)
 router.include_router(agent.router)
+router.include_router(agent_download.router)
 router.include_router(downloads.router)
+router.include_router(enroll.router)
 router.include_router(tags.router)
 router.include_router(groups.router)
 router.include_router(inventory.router)

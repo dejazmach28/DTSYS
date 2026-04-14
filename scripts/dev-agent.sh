@@ -47,13 +47,26 @@ enrollment_token = "${enrollment_token}"
 [agent]
 
 [collect]
-telemetry_interval_secs = 15
+telemetry_interval_secs = 10
 software_scan_interval_m = 5
 event_poll_interval_secs = 30
+
+[events]
+dedup_max_entries = 50
+exclude_patterns = ["event handler.*EOF", "event streamer.*EOF"]
+rate_limit_max = 20
+rate_limit_window_s = 30
 EOF
   echo "Agent config created at ${CONFIG_PATH}"
 else
   echo "Using existing agent config"
+  if grep -q "^telemetry_interval_secs" "$CONFIG_PATH"; then
+    if [ "$(uname)" = "Darwin" ]; then
+      sed -i '' 's/^telemetry_interval_secs.*/telemetry_interval_secs = 10/' "$CONFIG_PATH"
+    else
+      sed -i 's/^telemetry_interval_secs.*/telemetry_interval_secs = 10/' "$CONFIG_PATH"
+    fi
+  fi
 fi
 
 cd client

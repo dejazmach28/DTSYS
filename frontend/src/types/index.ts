@@ -185,6 +185,7 @@ export interface ScreenshotResponse {
   width?: number | null
   height?: number | null
   error?: string | null
+  status?: 'captured' | 'not_captured'
 }
 
 export interface ActivityEvent {

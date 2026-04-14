@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "DTSYS"
     BASE_URL: str = "http://localhost:8000"
     API_V1_PREFIX: str = "/api/v1"
+    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
 
     # Device heartbeat: if not seen in this many seconds, mark offline
     DEVICE_OFFLINE_THRESHOLD_SECONDS: int = 120

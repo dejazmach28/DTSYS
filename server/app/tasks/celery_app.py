@@ -37,5 +37,9 @@ celery_app.conf.update(
             "task": "app.tasks.scheduler_tasks.run_scheduled_commands",
             "schedule": 60.0,
         },
+        "cleanup-stale-commands": {
+            "task": "app.tasks.cleanup_tasks.cleanup_stale_commands",
+            "schedule": 600.0,
+        },
     },
 )

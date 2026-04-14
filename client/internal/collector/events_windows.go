@@ -52,7 +52,7 @@ $events | ConvertTo-Json -Compress`, since.Format("2006-01-02T15:04:05"))
 
 	events := make([]transport.EventData, 0, len(records))
 	for _, record := range records {
-		events = append(events, transport.EventData{
+		event := transport.EventData{
 			EventType: classifyWindowsEvent(record.ProviderName, record.Message),
 			Source:    strings.TrimSpace(record.ProviderName),
 			Message:   strings.TrimSpace(record.Message),
@@ -61,7 +61,11 @@ $events | ConvertTo-Json -Compress`, since.Format("2006-01-02T15:04:05"))
 				"event_id":     record.ID,
 				"level":        record.LevelDisplay,
 			},
-		})
+		}
+		if shouldSkipEvent(event.Source, event.Message) {
+			continue
+		}
+		events = append(events, event)
 	}
 
 	return events, nil

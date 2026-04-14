@@ -21,6 +21,11 @@ def cleanup_old_metrics() -> None:
     asyncio.run(run_cleanup())
 
 
+@celery_app.task(name="app.tasks.cleanup_tasks.cleanup_stale_commands")
+def cleanup_stale_commands_task() -> None:
+    asyncio.run(cleanup_stale_commands())
+
+
 async def run_cleanup() -> dict[str, int]:
     settings = get_settings()
     now = datetime.now(timezone.utc)
@@ -44,6 +49,22 @@ async def run_cleanup() -> dict[str, int]:
     }
     log.info("cleanup_complete", **deleted)
     return deleted
+
+
+async def cleanup_stale_commands() -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=10)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            Command.__table__.update()
+            .where(Command.status == "sent", Command.created_at < cutoff)
+            .values(
+                status="failed",
+                output="Connection lost before result received",
+                completed_at=datetime.now(timezone.utc),
+            )
+        )
+        await db.commit()
+        return int(result.rowcount or 0)
 
 
 async def collect_storage_stats() -> dict:

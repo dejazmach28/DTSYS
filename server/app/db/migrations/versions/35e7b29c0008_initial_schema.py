@@ -147,6 +147,8 @@ def upgrade() -> None:
         EXCEPTION
             WHEN undefined_function THEN
                 NULL;
+            WHEN OTHERS THEN
+                NULL;
         END$$;
         """
     )

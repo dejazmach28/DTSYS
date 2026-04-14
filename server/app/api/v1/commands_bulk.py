@@ -40,7 +40,7 @@ async def dispatch_bulk_command(
     for device_id in body.device_ids:
         try:
             async with db.begin_nested():
-                cmd = await service.dispatch_command(
+                cmd, _sent = await service.dispatch_command(
                     device_id=device_id,
                     command_type=body.command_type,
                     payload=body.payload,
