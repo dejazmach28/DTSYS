@@ -1,6 +1,7 @@
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -8,14 +9,19 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+import { useState } from 'react'
 import { useRoute, type RouteProp } from '@react-navigation/native'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
 import api from '../api/client'
+import { commandsApi, COMMAND_LIBRARY, type Command } from '../api/commands'
+import CommandOutputModal from '../components/CommandOutputModal'
 
 type RouteParams = {
   DeviceDetail: { deviceId: string; hostname: string }
 }
+
+type Tab = 'overview' | 'commands'
 
 function Gauge({ label, value }: { label: string; value: number | null }) {
   if (value === null) return null
@@ -40,10 +46,77 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
+const STATUS_COLOR: Record<string, string> = {
+  pending: '#f59e0b',
+  sent: '#3b82f6',
+  running: '#8b5cf6',
+  completed: '#22c55e',
+  failed: '#ef4444',
+  timeout: '#94a3b8',
+}
+
+function CommandRow({ cmd, onPress }: { cmd: Command; onPress: () => void }) {
+  const color = STATUS_COLOR[cmd.status] ?? '#94a3b8'
+  return (
+    <TouchableOpacity onPress={onPress} style={styles.commandRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.commandType}>{cmd.command_type}</Text>
+        <Text style={styles.commandTime}>
+          {formatDistanceToNow(new Date(cmd.created_at), { addSuffix: true })}
+        </Text>
+      </View>
+      <View style={[styles.statusPill, { backgroundColor: color + '22', borderColor: color }]}>
+        <Text style={[styles.statusPillText, { color }]}>{cmd.status}</Text>
+      </View>
+    </TouchableOpacity>
+  )
+}
+
+function CommandLibrarySheet({
+  visible,
+  onClose,
+  onDispatch,
+}: {
+  visible: boolean
+  onClose: () => void
+  onDispatch: (type: string, dangerous: boolean) => void
+}) {
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={styles.sheetContainer}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>Command Library</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Text style={styles.closeBtn}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+        <ScrollView contentContainerStyle={styles.sheetContent}>
+          {COMMAND_LIBRARY.map((item) => (
+            <TouchableOpacity
+              key={item.type}
+              style={styles.libraryRow}
+              onPress={() => onDispatch(item.type, item.dangerous ?? false)}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.libraryLabel, item.dangerous && styles.dangerText]}>{item.label}</Text>
+                <Text style={styles.libraryDesc}>{item.description}</Text>
+              </View>
+              {item.dangerous && <Text style={styles.dangerBadge}>DANGER</Text>}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    </Modal>
+  )
+}
+
 export default function DeviceDetailScreen() {
   const route = useRoute<RouteProp<RouteParams, 'DeviceDetail'>>()
   const { deviceId } = route.params
   const queryClient = useQueryClient()
+  const [tab, setTab] = useState<Tab>('overview')
+  const [selectedCommandId, setSelectedCommandId] = useState<string | null>(null)
+  const [showLibrary, setShowLibrary] = useState(false)
 
   const { data: device, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['mobile-device', deviceId],
@@ -62,22 +135,32 @@ export default function DeviceDetailScreen() {
     queryFn: () => api.get('/alerts', { params: { device_id: deviceId, resolved: false, limit: 20 } }).then((r) => r.data),
   })
 
-  const { data: commands = [] } = useQuery({
+  const { data: commands = [], refetch: refetchCmds } = useQuery<Command[]>({
     queryKey: ['mobile-commands', deviceId],
-    queryFn: () => api.get('/commands', { params: { device_id: deviceId, limit: 10 } }).then((r) => r.data),
+    queryFn: () => commandsApi.list(deviceId, 30),
+    refetchInterval: tab === 'commands' ? 5000 : false,
   })
 
   const dispatch = useMutation({
-    mutationFn: (commandType: string) =>
-      api.post('/commands', { device_id: deviceId, command_type: commandType, payload: {} }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['mobile-commands', deviceId] }),
+    mutationFn: ({ type, payload }: { type: string; payload?: Record<string, unknown> }) =>
+      commandsApi.dispatch(deviceId, type, payload ?? {}),
+    onSuccess: (cmd) => {
+      queryClient.invalidateQueries({ queryKey: ['mobile-commands', deviceId] })
+      setShowLibrary(false)
+      setSelectedCommandId(cmd.id)
+    },
   })
 
-  const confirmAction = (label: string, commandType: string) => {
-    Alert.alert(`${label}`, `Send "${label}" to this device?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Send', style: 'destructive', onPress: () => dispatch.mutate(commandType) },
-    ])
+  const handleDispatch = (type: string, dangerous: boolean) => {
+    if (dangerous) {
+      const item = COMMAND_LIBRARY.find((c) => c.type === type)
+      Alert.alert(item?.label ?? type, `Are you sure you want to send "${item?.label ?? type}" to this device?`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Send', style: 'destructive', onPress: () => dispatch.mutate({ type }) },
+      ])
+    } else {
+      dispatch.mutate({ type })
+    }
   }
 
   if (isLoading) {
@@ -89,69 +172,116 @@ export default function DeviceDetailScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={<RefreshControl refreshing={isFetching} onRefresh={refetch} colors={['#2563eb']} />}
-    >
-      <Section title="System">
-        <Gauge label="CPU" value={metric?.cpu_percent ?? null} />
-        <Gauge label="RAM" value={metric?.ram_percent ?? null} />
-        <Gauge label="Disk" value={metric?.disk_percent ?? null} />
-        <Text style={styles.meta}>Last seen: {device?.last_seen
-          ? formatDistanceToNow(new Date(device.last_seen), { addSuffix: true })
-          : '—'}</Text>
-        {device?.agent_version && (
-          <Text style={styles.meta}>Agent: v{device.agent_version}</Text>
-        )}
-      </Section>
+    <View style={{ flex: 1, backgroundColor: '#f1f5f9' }}>
+      {/* Tab bar */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tabBtn, tab === 'overview' && styles.tabBtnActive]}
+          onPress={() => setTab('overview')}
+        >
+          <Text style={[styles.tabBtnText, tab === 'overview' && styles.tabBtnTextActive]}>Overview</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabBtn, tab === 'commands' && styles.tabBtnActive]}
+          onPress={() => setTab('commands')}
+        >
+          <Text style={[styles.tabBtnText, tab === 'commands' && styles.tabBtnTextActive]}>
+            Commands {commands.length > 0 ? `(${commands.length})` : ''}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
-      {alerts.length > 0 && (
-        <Section title={`Alerts (${alerts.length})`}>
-          {alerts.map((alert: any) => (
-            <View key={alert.id} style={[styles.alertRow, alert.severity === 'critical' && styles.alertCritical]}>
-              <Text style={styles.alertSeverity}>{alert.severity.toUpperCase()}</Text>
-              <Text style={styles.alertMessage} numberOfLines={2}>{alert.message}</Text>
+      {tab === 'overview' ? (
+        <ScrollView
+          refreshControl={<RefreshControl refreshing={isFetching} onRefresh={refetch} colors={['#2563eb']} />}
+        >
+          <Section title="System">
+            <Gauge label="CPU" value={metric?.cpu_percent ?? null} />
+            <Gauge label="RAM" value={metric?.ram_percent ?? null} />
+            <Gauge label="Disk" value={metric?.disk_percent ?? null} />
+            <Text style={styles.meta}>Last seen: {device?.last_seen
+              ? formatDistanceToNow(new Date(device.last_seen), { addSuffix: true })
+              : '—'}</Text>
+            {device?.agent_version && (
+              <Text style={styles.meta}>Agent: v{device.agent_version}</Text>
+            )}
+          </Section>
+
+          {alerts.length > 0 && (
+            <Section title={`Alerts (${alerts.length})`}>
+              {alerts.map((alert: any) => (
+                <View key={alert.id} style={[styles.alertRow, alert.severity === 'critical' && styles.alertCritical]}>
+                  <Text style={styles.alertSeverity}>{alert.severity.toUpperCase()}</Text>
+                  <Text style={styles.alertMessage} numberOfLines={2}>{alert.message}</Text>
+                </View>
+              ))}
+            </Section>
+          )}
+
+          <Section title="Quick Actions">
+            <View style={styles.actions}>
+              <TouchableOpacity style={styles.actionBtn} onPress={() => handleDispatch('check_updates', false)}>
+                <Text style={styles.actionBtnText}>Check Updates</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionBtn} onPress={() => handleDispatch('sync_time', false)}>
+                <Text style={styles.actionBtnText}>Sync Time</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.actionBtnDanger]}
+                onPress={() => handleDispatch('reboot', true)}
+              >
+                <Text style={[styles.actionBtnText, { color: '#ef4444' }]}>Reboot</Text>
+              </TouchableOpacity>
             </View>
-          ))}
-        </Section>
-      )}
-
-      {commands.length > 0 && (
-        <Section title="Recent Commands">
-          {commands.slice(0, 5).map((cmd: any) => (
-            <View key={cmd.id} style={styles.commandRow}>
-              <Text style={styles.commandType}>{cmd.command_type}</Text>
-              <Text style={[styles.commandStatus, cmd.status === 'completed' ? styles.statusOk : styles.statusPending]}>
-                {cmd.status}
-              </Text>
-            </View>
-          ))}
-        </Section>
-      )}
-
-      <Section title="Quick Actions">
-        <View style={styles.actions}>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => dispatch.mutate('check_updates')}>
-            <Text style={styles.actionBtnText}>Check Updates</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionBtn} onPress={() => dispatch.mutate('sync_time')}>
-            <Text style={styles.actionBtnText}>Sync Time</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.actionBtnDanger]}
-            onPress={() => confirmAction('Reboot', 'reboot')}
+          </Section>
+        </ScrollView>
+      ) : (
+        <View style={{ flex: 1 }}>
+          <ScrollView
+            refreshControl={<RefreshControl refreshing={isFetching} onRefresh={refetchCmds} colors={['#2563eb']} />}
+            contentContainerStyle={{ paddingVertical: 12 }}
           >
-            <Text style={[styles.actionBtnText, { color: '#ef4444' }]}>Reboot</Text>
+            {commands.length === 0 && (
+              <Text style={styles.emptyText}>No commands yet. Tap + to dispatch one.</Text>
+            )}
+            {commands.map((cmd) => (
+              <CommandRow key={cmd.id} cmd={cmd} onPress={() => setSelectedCommandId(cmd.id)} />
+            ))}
+          </ScrollView>
+
+          {/* Floating action button */}
+          <TouchableOpacity style={styles.fab} onPress={() => setShowLibrary(true)}>
+            <Text style={styles.fabText}>+</Text>
           </TouchableOpacity>
         </View>
-      </Section>
-    </ScrollView>
+      )}
+
+      <CommandOutputModal
+        commandId={selectedCommandId}
+        onClose={() => setSelectedCommandId(null)}
+      />
+
+      <CommandLibrarySheet
+        visible={showLibrary}
+        onClose={() => setShowLibrary(false)}
+        onDispatch={handleDispatch}
+      />
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f1f5f9' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e2e8f0',
+  },
+  tabBtn: { flex: 1, paddingVertical: 12, alignItems: 'center' },
+  tabBtnActive: { borderBottomWidth: 2, borderBottomColor: '#2563eb' },
+  tabBtnText: { fontSize: 14, color: '#64748b', fontWeight: '500' },
+  tabBtnTextActive: { color: '#2563eb', fontWeight: '600' },
   section: {
     margin: 16,
     marginBottom: 0,
@@ -181,11 +311,6 @@ const styles = StyleSheet.create({
   alertCritical: { backgroundColor: '#fef2f2', borderRadius: 8, paddingHorizontal: 8 },
   alertSeverity: { fontSize: 10, fontWeight: '700', color: '#ef4444', paddingTop: 1, minWidth: 60 },
   alertMessage: { flex: 1, fontSize: 13, color: '#374151' },
-  commandRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
-  commandType: { fontSize: 13, color: '#374151' },
-  commandStatus: { fontSize: 12, fontWeight: '500' },
-  statusOk: { color: '#22c55e' },
-  statusPending: { color: '#f59e0b' },
   actions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   actionBtn: {
     flex: 1,
@@ -198,4 +323,75 @@ const styles = StyleSheet.create({
   },
   actionBtnDanger: { borderColor: '#fca5a5' },
   actionBtnText: { fontSize: 13, fontWeight: '500', color: '#374151' },
+  commandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    padding: 14,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  commandType: { fontSize: 14, color: '#1e293b', fontWeight: '500' },
+  commandTime: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 99,
+    borderWidth: 1,
+  },
+  statusPillText: { fontSize: 11, fontWeight: '600' },
+  emptyText: { textAlign: 'center', color: '#94a3b8', marginTop: 40, fontSize: 14 },
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#2563eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#2563eb',
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  fabText: { color: '#fff', fontSize: 28, lineHeight: 32, fontWeight: '300' },
+  sheetContainer: { flex: 1, backgroundColor: '#fff' },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e2e8f0',
+  },
+  sheetTitle: { fontSize: 17, fontWeight: '600', color: '#0f172a' },
+  closeBtn: { fontSize: 16, color: '#2563eb', fontWeight: '500' },
+  sheetContent: { padding: 16, gap: 4 },
+  libraryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#f1f5f9',
+  },
+  libraryLabel: { fontSize: 15, fontWeight: '500', color: '#1e293b', marginBottom: 2 },
+  libraryDesc: { fontSize: 12, color: '#94a3b8' },
+  dangerText: { color: '#ef4444' },
+  dangerBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#ef4444',
+    backgroundColor: '#fef2f2',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
 })

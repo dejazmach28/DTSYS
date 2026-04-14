@@ -16,6 +16,7 @@ from app.models.notification_rule import NotificationRule
 from app.models.push_token import PushToken
 from app.models.user import User
 from app.models.organization import Organization, OrganizationMember
+from app.models.compliance import CompliancePolicy, ComplianceResult
 
 __all__ = [
     "Device",
@@ -38,4 +39,6 @@ __all__ = [
     "User",
     "Organization",
     "OrganizationMember",
+    "CompliancePolicy",
+    "ComplianceResult",
 ]

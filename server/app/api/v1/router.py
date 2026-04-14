@@ -6,9 +6,11 @@ from app.api.v1 import (
     agent,
     agent_download,
     alerts,
+    audit,
     auth,
     commands,
     commands_bulk,
+    compliance,
     devices,
     downloads,
     enroll,
@@ -55,3 +57,5 @@ router.include_router(software_catalog.router)
 router.include_router(software_updates.router)
 router.include_router(organizations.router)
 router.include_router(push_tokens.router)
+router.include_router(compliance.router)
+router.include_router(audit.router)

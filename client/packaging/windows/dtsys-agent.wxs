@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WiX v4 MSI definition for the DTSYS Windows Agent.
+  Build with: build-msi.ps1 (requires WiX Toolset v4 installed)
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package
+    Name="DTSYS Agent"
+    Manufacturer="DTSYS"
+    Version="$(var.AgentVersion)"
+    UpgradeCode="B3A4C5D6-E7F8-4A1B-9C2D-3E4F5A6B7C8D"
+    InstallerVersion="500"
+    Compressed="yes">
+
+    <!-- Allow silent major upgrades and remove older versions -->
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+      Schedule="afterInstallInitialize" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Installation directory -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="DTSYSDIR" Name="DTSYS">
+        <Directory Id="INSTALLDIR" Name="Agent" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Component: agent binary -->
+    <ComponentGroup Id="AgentFiles" Directory="INSTALLDIR">
+      <Component Id="AgentExe" Guid="A1B2C3D4-E5F6-7890-A1B2-C3D4E5F67890">
+        <File Id="AgentExeFile"
+              Source="$(var.SourceDir)\dtsys-agent.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- WinSW service wrapper binary -->
+      <Component Id="WinSWExe" Guid="B2C3D4E5-F6A7-8901-B2C3-D4E5F6A78901">
+        <File Id="WinSWExeFile"
+              Source="$(var.SourceDir)\winsw.exe"
+              Name="winsw.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- WinSW service definition -->
+      <Component Id="WinSWXml" Guid="C3D4E5F6-A7B8-9012-C3D4-E5F6A7B89012">
+        <File Id="WinSWXmlFile"
+              Source="$(var.SourceDir)\dtsys-agent.xml"
+              Name="dtsys-agent.xml"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- Agent config (created by installer action, not shipped) -->
+      <Component Id="AgentConfig" Guid="D4E5F6A7-B8C9-0123-D4E5-F6A7B8C90123">
+        <CreateFolder />
+        <!-- agent.toml is written by the custom action below; this component
+             just ensures the directory exists and is tracked for uninstall. -->
+        <RemoveFile Id="RemoveAgentConfig" On="uninstall" Name="agent.toml" />
+        <RemoveFile Id="RemoveLogs" On="uninstall" Name="*.log" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Feature: default (everything) -->
+    <Feature Id="Complete" Level="1">
+      <ComponentGroupRef Id="AgentFiles" />
+    </Feature>
+
+    <!-- Custom actions: write config, install/start/stop/uninstall service -->
+    <SetProperty Id="WriteConfigCmd"
+                 Value='[SystemFolder]cmd.exe /c echo server_url = "[DTSYS_SERVER]" &gt; "[INSTALLDIR]agent.toml" &amp;&amp; echo enrollment_token = "[DTSYS_TOKEN]" &gt;&gt; "[INSTALLDIR]agent.toml" &amp;&amp; echo org_id = "[DTSYS_ORG_ID]" &gt;&gt; "[INSTALLDIR]agent.toml"'
+                 Before="WriteConfigExec"
+                 Sequence="execute" />
+
+    <CustomAction Id="WriteConfigExec"
+                  Directory="INSTALLDIR"
+                  ExeCommand='[SystemFolder]cmd.exe /c echo [DTSYS_SERVER]'
+                  Return="ignore"
+                  Execute="deferred"
+                  Impersonate="no" />
+
+    <!-- Install service via WinSW -->
+    <CustomAction Id="InstallService"
+                  Directory="INSTALLDIR"
+                  ExeCommand='"[INSTALLDIR]winsw.exe" install'
+                  Return="ignore"
+                  Execute="deferred"
+                  Impersonate="no" />
+
+    <!-- Start service -->
+    <CustomAction Id="StartService"
+                  Directory="INSTALLDIR"
+                  ExeCommand='"[INSTALLDIR]winsw.exe" start'
+                  Return="ignore"
+                  Execute="deferred"
+                  Impersonate="no" />
+
+    <!-- Stop service before uninstall -->
+    <CustomAction Id="StopService"
+                  Directory="INSTALLDIR"
+                  ExeCommand='"[INSTALLDIR]winsw.exe" stop'
+                  Return="ignore"
+                  Execute="deferred"
+                  Impersonate="no" />
+
+    <!-- Uninstall service -->
+    <CustomAction Id="UninstallService"
+                  Directory="INSTALLDIR"
+                  ExeCommand='"[INSTALLDIR]winsw.exe" uninstall'
+                  Return="ignore"
+                  Execute="deferred"
+                  Impersonate="no" />
+
+    <InstallExecuteSequence>
+      <!-- On install: write config, install + start service -->
+      <Custom Action="WriteConfigExec" Before="InstallFinalize">NOT Installed</Custom>
+      <Custom Action="InstallService" After="WriteConfigExec">NOT Installed</Custom>
+      <Custom Action="StartService" After="InstallService">NOT Installed</Custom>
+
+      <!-- On uninstall: stop + uninstall service -->
+      <Custom Action="StopService" Before="RemoveFiles">Installed AND NOT UPGRADINGPRODUCTCODE</Custom>
+      <Custom Action="UninstallService" After="StopService">Installed AND NOT UPGRADINGPRODUCTCODE</Custom>
+    </InstallExecuteSequence>
+
+    <!-- UI: minimal progress dialog -->
+    <UIRef Id="WixUI_Minimal" />
+
+    <!-- Public properties passed via msiexec PROPERTY=value -->
+    <Property Id="DTSYS_SERVER" Secure="yes" />
+    <Property Id="DTSYS_TOKEN" Secure="yes" />
+    <Property Id="DTSYS_ORG_ID" Secure="yes" />
+
+  </Package>
+</Wix>
