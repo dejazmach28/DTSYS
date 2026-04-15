@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Plus, RefreshCw } from 'lucide-react'
+import { Copy, Plus, RefreshCw, RotateCcw, Upload, X } from 'lucide-react'
 import { format } from 'date-fns'
 import api from '../api/client'
 import { adminApi } from '../api/admin'
@@ -8,10 +8,58 @@ import { devicesApi } from '../api/devices'
 import { notificationRulesApi } from '../api/notificationRules'
 import Pagination from '../components/ui/Pagination'
 import { useAuthStore } from '../store/authStore'
+import { useBrandingStore } from '../store/brandingStore'
 import { exportToCSV } from '../utils/export'
 
 export default function Settings() {
   const { role } = useAuthStore()
+  const branding = useBrandingStore()
+  const [brandingDraft, setBrandingDraft] = useState({
+    companyName: branding.companyName,
+    sidebarLabel: branding.sidebarLabel,
+    accentColor: branding.accentColor,
+  })
+  const [brandingSaved, setBrandingSaved] = useState(false)
+  const logoInputRef = useRef<HTMLInputElement>(null)
+  const faviconInputRef = useRef<HTMLInputElement>(null)
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => branding.setLogoUrl(reader.result as string)
+    reader.readAsDataURL(file)
+  }
+
+  const handleFaviconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      branding.setFaviconUrl(dataUrl)
+      // Apply favicon live
+      const link = document.querySelector<HTMLLinkElement>("link[rel~='icon']") ?? document.createElement('link')
+      link.rel = 'icon'
+      link.href = dataUrl
+      document.head.appendChild(link)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const saveBranding = () => {
+    branding.setCompanyName(brandingDraft.companyName || 'DTSYS')
+    branding.setSidebarLabel(brandingDraft.sidebarLabel)
+    branding.setAccentColor(brandingDraft.accentColor)
+    setBrandingSaved(true)
+    setTimeout(() => setBrandingSaved(false), 2000)
+  }
+
+  const resetBranding = () => {
+    branding.reset()
+    setBrandingDraft({ companyName: 'DTSYS', sidebarLabel: 'IT Management', accentColor: '#3b82f6' })
+  }
+
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'viewer' })
   const [newRule, setNewRule] = useState({
     alert_type: '*',
@@ -120,6 +168,182 @@ export default function Settings() {
         <h1 className="text-xl font-bold text-slate-900 dark:text-gray-100">Settings</h1>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-gray-500">Administration</p>
       </div>
+
+      {/* ── Branding ── */}
+      <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900 space-y-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-gray-200">Company Branding</h2>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-gray-500">
+              Customize the logo, name, and accent colour shown in the sidebar and topbar.
+              Settings are saved in your browser.
+            </p>
+          </div>
+          <button
+            onClick={resetBranding}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+            title="Reset to defaults"
+          >
+            <RotateCcw size={12} />
+            Reset
+          </button>
+        </div>
+
+        {/* Live preview */}
+        <div className="flex items-center gap-3 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/40">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+            {branding.logoUrl ? (
+              <img src={branding.logoUrl} alt="logo" className="h-7 w-7 rounded object-contain" />
+            ) : (
+              <span
+                className="text-lg font-bold"
+                style={{ color: brandingDraft.accentColor }}
+              >
+                {(brandingDraft.companyName || 'D')[0].toUpperCase()}
+              </span>
+            )}
+          </div>
+          <div>
+            <div className="text-sm font-bold text-slate-900 dark:text-gray-100">
+              {brandingDraft.companyName || 'DTSYS'}
+            </div>
+            <div className="text-[10px] text-slate-400 dark:text-gray-500">
+              {brandingDraft.sidebarLabel || 'IT Management'}
+            </div>
+          </div>
+          <div
+            className="ml-auto h-4 w-16 rounded-full"
+            style={{ backgroundColor: brandingDraft.accentColor }}
+            title="Accent colour"
+          />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* Company name */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-gray-400">Company Name</label>
+            <input
+              value={brandingDraft.companyName}
+              onChange={(e) => setBrandingDraft((d) => ({ ...d, companyName: e.target.value }))}
+              placeholder="DTSYS"
+              maxLength={40}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+            />
+          </div>
+
+          {/* Sidebar label */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-gray-400">Sidebar Subtitle</label>
+            <input
+              value={brandingDraft.sidebarLabel}
+              onChange={(e) => setBrandingDraft((d) => ({ ...d, sidebarLabel: e.target.value }))}
+              placeholder="IT Management"
+              maxLength={40}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+            />
+          </div>
+
+          {/* Accent colour */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-gray-400">Accent Colour</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={brandingDraft.accentColor}
+                onChange={(e) => setBrandingDraft((d) => ({ ...d, accentColor: e.target.value }))}
+                className="h-9 w-14 cursor-pointer rounded-lg border border-slate-200 bg-transparent p-0.5 dark:border-gray-700"
+              />
+              <input
+                value={brandingDraft.accentColor}
+                onChange={(e) => setBrandingDraft((d) => ({ ...d, accentColor: e.target.value }))}
+                placeholder="#3b82f6"
+                maxLength={7}
+                className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm text-slate-900 outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+              />
+            </div>
+          </div>
+
+          {/* Logo upload */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-gray-400">Logo (replaces icon)</label>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => logoInputRef.current?.click()}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              >
+                <Upload size={13} />
+                {branding.logoUrl ? 'Replace' : 'Upload'} logo
+              </button>
+              {branding.logoUrl && (
+                <>
+                  <img src={branding.logoUrl} alt="logo preview" className="h-8 w-8 rounded border border-slate-200 object-contain dark:border-gray-700" />
+                  <button
+                    onClick={() => branding.setLogoUrl('')}
+                    className="rounded p-1 text-slate-400 hover:text-red-500"
+                    title="Remove logo"
+                  >
+                    <X size={14} />
+                  </button>
+                </>
+              )}
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                className="hidden"
+                onChange={handleLogoUpload}
+              />
+            </div>
+            <p className="mt-1 text-xs text-slate-400 dark:text-gray-600">PNG, JPG, SVG or WebP. Square recommended. Max display size 28×28px.</p>
+          </div>
+
+          {/* Favicon upload */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-gray-400">Favicon (browser tab icon)</label>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => faviconInputRef.current?.click()}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              >
+                <Upload size={13} />
+                {branding.faviconUrl ? 'Replace' : 'Upload'} favicon
+              </button>
+              {branding.faviconUrl && (
+                <>
+                  <img src={branding.faviconUrl} alt="favicon preview" className="h-6 w-6 rounded border border-slate-200 object-contain dark:border-gray-700" />
+                  <button
+                    onClick={() => branding.setFaviconUrl('')}
+                    className="rounded p-1 text-slate-400 hover:text-red-500"
+                    title="Remove favicon"
+                  >
+                    <X size={14} />
+                  </button>
+                </>
+              )}
+              <input
+                ref={faviconInputRef}
+                type="file"
+                accept="image/png,image/x-icon,image/svg+xml"
+                className="hidden"
+                onChange={handleFaviconUpload}
+              />
+            </div>
+            <p className="mt-1 text-xs text-slate-400 dark:text-gray-600">PNG, ICO or SVG. 32×32px recommended.</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 pt-1">
+          <button
+            onClick={saveBranding}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500 transition-colors"
+          >
+            {brandingSaved ? 'Saved!' : 'Save Branding'}
+          </button>
+          <p className="text-xs text-slate-400 dark:text-gray-600">
+            Branding is stored locally in your browser — no server changes required.
+          </p>
+        </div>
+      </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
         <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-gray-200">Enrollment Token</h2>

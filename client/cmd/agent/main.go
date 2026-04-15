@@ -378,7 +378,8 @@ func softwareLoop(ctx context.Context, client *transport.Client, runtimeCfg *con
 	ticker := time.NewTicker(runtimeCfg.SoftwareInterval())
 	defer ticker.Stop()
 
-	// Send once at startup
+	// Wait for connection before initial send
+	waitConnected(ctx, client)
 	sendSoftware(client)
 
 	for {
@@ -389,6 +390,19 @@ func softwareLoop(ctx context.Context, client *transport.Client, runtimeCfg *con
 			ticker.Reset(next)
 		case <-ticker.C:
 			sendSoftware(client)
+		}
+	}
+}
+
+func waitConnected(ctx context.Context, client *transport.Client) {
+	for {
+		if client.IsConnected() {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(500 * time.Millisecond):
 		}
 	}
 }
@@ -453,6 +467,7 @@ func networkLoop(ctx context.Context, client *transport.Client) {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
 
+	waitConnected(ctx, client)
 	sendNetwork(client)
 	for {
 		select {
@@ -484,6 +499,7 @@ func sshKeyLoop(ctx context.Context, client *transport.Client) {
 	ticker := time.NewTicker(4 * time.Hour)
 	defer ticker.Stop()
 
+	waitConnected(ctx, client)
 	sendSSHKeys(client)
 	for {
 		select {
@@ -508,6 +524,7 @@ func processLoop(ctx context.Context, client *transport.Client) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
+	waitConnected(ctx, client)
 	sendProcesses(client)
 	for {
 		select {

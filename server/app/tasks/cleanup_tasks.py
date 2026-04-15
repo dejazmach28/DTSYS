@@ -18,12 +18,20 @@ log = get_logger(__name__)
 
 @celery_app.task(name="app.tasks.cleanup_tasks.cleanup_old_metrics")
 def cleanup_old_metrics() -> None:
-    asyncio.run(run_cleanup())
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(run_cleanup())
+    finally:
+        loop.close()
 
 
 @celery_app.task(name="app.tasks.cleanup_tasks.cleanup_stale_commands")
 def cleanup_stale_commands_task() -> None:
-    asyncio.run(cleanup_stale_commands())
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(cleanup_stale_commands())
+    finally:
+        loop.close()
 
 
 async def run_cleanup() -> dict[str, int]:

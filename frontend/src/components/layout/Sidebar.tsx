@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { LayoutDashboard, Bell, Settings, Shield, BarChart2, Building2, CheckSquare, ClipboardList, Clock3, PackageOpen, Plus, Network, BookOpen, Package, Users, Monitor } from 'lucide-react'
+import { LayoutDashboard, Bell, Settings, Shield, BarChart2, Building2, CheckSquare, ClipboardList, Clock3, PackageOpen, Plus, Network, BookOpen, Package, Users, Monitor, Download } from 'lucide-react'
 import { useAlerts } from '../../hooks/useAlerts'
 import { clsx } from 'clsx'
 import { groupsApi } from '../../api/groups'
 import { useAuthStore } from '../../store/authStore'
+import { useBrandingStore } from '../../store/brandingStore'
 
 const navItems = [
   { to: '/my-dashboard', icon: LayoutDashboard, label: 'My Dashboard' },
@@ -17,6 +18,7 @@ const navItems = [
   { to: '/command-library', icon: BookOpen, label: 'Command Library' },
   { to: '/software-updates', icon: PackageOpen, label: 'Software Updates' },
   { to: '/scheduled', icon: Clock3, label: 'Scheduled' },
+  { to: '/downloads', icon: Download, label: 'Downloads' },
   { to: '/compliance', icon: CheckSquare, label: 'Compliance' },
   { to: '/audit', icon: ClipboardList, label: 'Audit Log', adminOnly: true },
   { to: '/users', icon: Users, label: 'Users', adminOnly: true },
@@ -35,6 +37,7 @@ export default function Sidebar({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { role } = useAuthStore()
+  const { companyName, logoUrl, sidebarLabel, accentColor } = useBrandingStore()
   const { data: alerts } = useAlerts({ resolved: false })
   const { data: groups = [] } = useQuery({ queryKey: ['groups'], queryFn: groupsApi.list })
   const [showCreateGroup, setShowCreateGroup] = useState(false)
@@ -54,8 +57,19 @@ export default function Sidebar({
   return (
     <aside className={clsx('flex w-56 flex-col border-r border-slate-200 bg-white dark:border-gray-800 dark:bg-gray-900', className)}>
       <div className="flex items-center gap-2 border-b border-slate-200 p-4 dark:border-gray-800">
-        <Shield className="text-blue-500" size={22} />
-        <span className="font-bold text-lg tracking-tight">DTSYS</span>
+        {logoUrl ? (
+          <img src={logoUrl} alt="logo" className="h-7 w-7 rounded object-contain" />
+        ) : (
+          <Shield style={{ color: accentColor }} size={22} />
+        )}
+        <div className="min-w-0">
+          <div className="truncate font-bold text-base leading-tight tracking-tight text-slate-900 dark:text-gray-100">
+            {companyName}
+          </div>
+          {sidebarLabel && (
+            <div className="truncate text-[10px] text-slate-400 dark:text-gray-500 leading-tight">{sidebarLabel}</div>
+          )}
+        </div>
       </div>
 
       <nav className="flex-1 p-2 space-y-1">
@@ -125,7 +139,7 @@ export default function Sidebar({
       </nav>
 
       <div className="border-t border-slate-200 p-3 text-xs text-slate-500 dark:border-gray-800 dark:text-gray-600">
-        DTSYS v0.1.0
+        {companyName} · v1.3.0
       </div>
 
       {showCreateGroup && (

@@ -14,7 +14,7 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/dtsys-agent-linux-a
 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../dist/dtsys-agent-linux-arm64 ./cmd/agent/
 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/dtsys-agent-darwin-amd64 ./cmd/agent/
 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o ../dist/dtsys-agent-darwin-arm64 ./cmd/agent/
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/dtsys-agent-windows.exe ./cmd/agent/
+GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/dtsys-agent-windows-amd64.exe ./cmd/agent/
 
 echo "$VERSION" > ../dist/version.txt
 

@@ -22,6 +22,7 @@ import CustomDashboard from './pages/CustomDashboard'
 import Organizations from './pages/Organizations'
 import Compliance from './pages/Compliance'
 import AuditLog from './pages/AuditLog'
+import Downloads from './pages/Downloads'
 import { devicesApi } from './api/devices'
 import { useAuthStore } from './store/authStore'
 
@@ -107,6 +108,7 @@ export default function App() {
             <Route path="users" element={withBoundary(<Users />)} />
             <Route path="compliance" element={withBoundary(<Compliance />)} />
             <Route path="audit" element={withBoundary(<AuditLog />)} />
+            <Route path="downloads" element={withBoundary(<Downloads />)} />
             <Route path="organizations" element={withBoundary(<Organizations />)} />
             <Route path="settings" element={withBoundary(<Settings />)} />
           </Route>
