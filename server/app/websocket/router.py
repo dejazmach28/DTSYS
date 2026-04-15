@@ -23,7 +23,7 @@ router = APIRouter()
 log = get_logger(__name__)
 _pending_offline: dict[uuid.UUID, asyncio.Task] = {}
 _pending_lock = asyncio.Lock()
-MAX_WS_MESSAGE_BYTES = 256 * 1024
+MAX_WS_MESSAGE_BYTES = 4 * 1024 * 1024  # 4 MB — accommodates large software inventories and screenshots
 
 
 async def _ping_loop(websocket: WebSocket, device_id: uuid.UUID, interval: int = 30) -> None:
@@ -69,15 +69,19 @@ async def device_websocket(
     redis: Redis = Depends(get_redis),
 ):
     client_ip = websocket.client.host if websocket.client else "unknown"
-    attempts_key = f"ws_attempts:{client_ip}"
 
-    attempts = await redis.incr(attempts_key)
-    if attempts == 1:
-        await redis.expire(attempts_key, 60)
-    if attempts > 10:
-        await websocket.close(code=4029)
-        log.warning("ws_rate_limited", device_id=str(device_id), ip=client_ip, attempts=attempts)
-        return
+    # Skip rate limiting for loopback — agents on the same host legitimately reconnect
+    # frequently (e.g. during restarts / updates). Real abuse from localhost is impossible.
+    _is_loopback = client_ip in ("127.0.0.1", "::1", "localhost")
+    if not _is_loopback:
+        attempts_key = f"ws_attempts:{client_ip}"
+        attempts = await redis.incr(attempts_key)
+        if attempts == 1:
+            await redis.expire(attempts_key, 60)
+        if attempts > 30:
+            await websocket.close(code=4029)
+            log.warning("ws_rate_limited", device_id=str(device_id), ip=client_ip, attempts=attempts)
+            return
 
     # Authenticate device
     result = await db.execute(
