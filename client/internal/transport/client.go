@@ -151,22 +151,37 @@ func (c *Client) readLoop(ctx context.Context) {
 
 	// Keepalive settings.
 	const pongWait = 60 * time.Second
-	conn.SetReadDeadline(time.Now().Add(pongWait))
+	// readPoll is how often ReadJSON wakes up to check ctx even when idle.
+	const readPoll = 2 * time.Second
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
+	conn.SetReadDeadline(time.Now().Add(readPoll))
 
 	for {
+		// Check for shutdown before blocking on the network.
+		if ctx.Err() != nil {
+			conn.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+			return
+		}
+
 		var raw map[string]json.RawMessage
 		err := conn.ReadJSON(&raw)
 		if err != nil {
+			// A deadline timeout just means "no message yet" — reset and retry.
+			if netErr, ok := err.(interface{ Timeout() bool }); ok && netErr.Timeout() {
+				conn.SetReadDeadline(time.Now().Add(readPoll))
+				continue
+			}
 			lastErr = err
 			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				slog.Warn("websocket read error", "error", err)
 			}
 			return
 		}
+		conn.SetReadDeadline(time.Now().Add(readPoll))
 
 		var msgType string
 		if t, ok := raw["type"]; ok {

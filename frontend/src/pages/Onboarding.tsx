@@ -39,27 +39,33 @@ export default function Onboarding() {
 
   const snippets = useMemo(
     () => ({
-      linux: `curl -fsSL ${apiBase}/downloads/dtsys-agent-linux-amd64 -o /usr/local/bin/dtsys-agent && chmod +x /usr/local/bin/dtsys-agent && mkdir -p /etc/dtsys && cat > /etc/dtsys/agent.toml <<'EOF'
+      linux: `curl -fsSL "${apiBase}/api/v1/agent/download?platform=linux&arch=amd64" -o /tmp/dtsys-agent && chmod +x /tmp/dtsys-agent && mkdir -p /etc/dtsys && cat > /tmp/dtsys-agent.toml <<'EOF'
 [server]
-url = "${apiBase.replace('http', 'ws')}"
+url = "${apiBase}"
 enrollment_token = "${token}"
 
 [agent]
 device_id = ""
 api_key = ""
+
+[update]
+auto_update = false
 EOF
-/usr/local/bin/dtsys-agent --config /etc/dtsys/agent.toml`,
+/tmp/dtsys-agent --config /tmp/dtsys-agent.toml`,
       windows: `powershell -ExecutionPolicy Bypass -File .\\install.ps1 -ServerURL "${apiBase}" -EnrollmentToken "${token}"`,
-      macos: `brew install curl && mkdir -p /usr/local/bin /etc/dtsys && curl -fsSL ${apiBase}/downloads/dtsys-agent-darwin-arm64 -o /usr/local/bin/dtsys-agent && chmod +x /usr/local/bin/dtsys-agent && cat > /etc/dtsys/agent.toml <<'EOF'
+      macos: `curl -fsSL "${apiBase}/api/v1/agent/download?platform=darwin&arch=arm64" -o /tmp/dtsys-agent && chmod +x /tmp/dtsys-agent && mkdir -p /etc/dtsys && cat > /tmp/dtsys-agent.toml <<'EOF'
 [server]
-url = "${apiBase.replace('http', 'ws')}"
+url = "${apiBase}"
 enrollment_token = "${token}"
 
 [agent]
 device_id = ""
 api_key = ""
+
+[update]
+auto_update = false
 EOF
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.dtsys.agent.plist`,
+/tmp/dtsys-agent --config /tmp/dtsys-agent.toml`,
     }),
     [apiBase, token],
   )

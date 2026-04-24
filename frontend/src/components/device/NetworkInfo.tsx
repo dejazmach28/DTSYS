@@ -10,6 +10,7 @@ export default function NetworkInfo({ deviceId }: Props) {
     queryKey: ['device-network', deviceId],
     queryFn: () => devicesApi.network(deviceId),
     enabled: !!deviceId,
+    refetchOnMount: 'always',
     refetchInterval: 60_000,
   })
 

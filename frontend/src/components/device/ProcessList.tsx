@@ -15,6 +15,7 @@ export default function ProcessList({ deviceId, active }: { deviceId: string; ac
     queryFn: () => devicesApi.processes(deviceId),
     enabled: active,
     retry: false,
+    refetchOnMount: 'always',
     refetchInterval: active ? 60_000 : false,
   })
 

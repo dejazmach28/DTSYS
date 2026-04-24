@@ -22,18 +22,22 @@ async def get_software_inventory(
     response: Response,
     skip: int = Query(0, ge=0),
     limit: int = Query(500, ge=1, le=1000),
+    search: str = Query("", max_length=200),
 ):
     await _get_device_for_org(db, device_id, current_org_id)
+    base_where = SoftwareInventory.device_id == device_id
+    if search:
+        base_where = base_where & SoftwareInventory.name.ilike(f"%{search}%")
     total = int(
         await db.scalar(
-            select(func.count()).select_from(SoftwareInventory).where(SoftwareInventory.device_id == device_id)
+            select(func.count()).select_from(SoftwareInventory).where(base_where)
         )
         or 0
     )
     response.headers["X-Total-Count"] = str(total)
     result = await db.execute(
         select(SoftwareInventory)
-        .where(SoftwareInventory.device_id == device_id)
+        .where(base_where)
         .order_by(SoftwareInventory.name)
         .offset(skip)
         .limit(limit)

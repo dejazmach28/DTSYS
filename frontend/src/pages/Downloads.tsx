@@ -21,7 +21,7 @@ const PLATFORMS = [
     archLabels: { amd64: 'x86-64 (Intel/AMD)', arm64: 'ARM64 (Raspberry Pi, AWS Graviton)' },
     installTitle: 'One-liner install (Linux)',
     installCmd: (token: string, server: string) =>
-      `curl -fsSL ${server}/api/v1/installer/linux | sudo bash -s -- --token ${token}`,
+      `curl -fsSL "${server}/api/v1/agent/download?platform=linux&arch=amd64" -o /tmp/dtsys-agent && chmod +x /tmp/dtsys-agent && mkdir -p /etc/dtsys && cat > /tmp/dtsys-agent.toml <<'EOF'\n[server]\nurl = "${server}"\nenrollment_token = "${token}"\n\n[agent]\ndevice_id = ""\napi_key = ""\n\n[update]\nauto_update = false\nEOF\n/tmp/dtsys-agent --config /tmp/dtsys-agent.toml`,
     serviceTitle: 'Manage the service',
     serviceSnippets: [
       'sudo systemctl status dtsys-agent',
@@ -46,7 +46,7 @@ const PLATFORMS = [
     archLabels: { arm64: 'Apple Silicon (M1/M2/M3)', amd64: 'Intel' },
     installTitle: 'One-liner install (macOS)',
     installCmd: (token: string, server: string) =>
-      `curl -fsSL ${server}/api/v1/installer/macos | sudo bash -s -- --token ${token}`,
+      `curl -fsSL "${server}/api/v1/agent/download?platform=darwin&arch=arm64" -o /tmp/dtsys-agent && chmod +x /tmp/dtsys-agent && mkdir -p /etc/dtsys && cat > /tmp/dtsys-agent.toml <<'EOF'\n[server]\nurl = "${server}"\nenrollment_token = "${token}"\n\n[agent]\ndevice_id = ""\napi_key = ""\n\n[update]\nauto_update = false\nEOF\n/tmp/dtsys-agent --config /tmp/dtsys-agent.toml`,
     serviceTitle: 'Manage the service',
     serviceSnippets: [
       'sudo launchctl list | grep dtsys',

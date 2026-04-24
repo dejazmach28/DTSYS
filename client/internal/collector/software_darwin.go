@@ -12,15 +12,14 @@ import (
 	"github.com/dtsys/agent/internal/transport"
 )
 
-// CollectSoftware returns installed packages on macOS via Homebrew + system_profiler.
+// CollectSoftware returns installed packages on macOS via Homebrew + system_profiler,
+// with update availability from "brew outdated".
 func CollectSoftware() ([]transport.SoftwarePackage, error) {
 	var packages []transport.SoftwarePackage
 
-	// Homebrew packages
 	brewPkgs, _ := collectHomebrew()
 	packages = append(packages, brewPkgs...)
 
-	// System installed apps via system_profiler
 	appPkgs, _ := collectSystemProfiler()
 	packages = append(packages, appPkgs...)
 
@@ -45,7 +44,52 @@ func collectHomebrew() ([]transport.SoftwarePackage, error) {
 			Version: parts[len(parts)-1],
 		})
 	}
+
+	// Cross-reference with brew outdated
+	applyBrewUpdates(packages)
 	return packages, nil
+}
+
+// applyBrewUpdates runs "brew outdated --json=v2" and annotates packages
+// that have a newer version available in the Homebrew registry.
+func applyBrewUpdates(pkgs []transport.SoftwarePackage) {
+	idx := make(map[string]int, len(pkgs))
+	for i, p := range pkgs {
+		idx[p.Name] = i
+	}
+
+	out, err := exec.Command("brew", "outdated", "--json=v2").Output()
+	if err != nil {
+		return
+	}
+
+	var result struct {
+		Formulae []struct {
+			Name           string   `json:"name"`
+			CurrentVersion string   `json:"current_version"`
+			InstalledVersions []string `json:"installed_versions"`
+		} `json:"formulae"`
+		Casks []struct {
+			Name           string `json:"token"`
+			CurrentVersion string `json:"current_version"`
+		} `json:"casks"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return
+	}
+
+	for _, f := range result.Formulae {
+		if i, ok := idx[f.Name]; ok {
+			pkgs[i].UpdateAvailable = true
+			pkgs[i].LatestVersion = f.CurrentVersion
+		}
+	}
+	for _, c := range result.Casks {
+		if i, ok := idx[c.Name]; ok {
+			pkgs[i].UpdateAvailable = true
+			pkgs[i].LatestVersion = c.CurrentVersion
+		}
+	}
 }
 
 func collectSystemProfiler() ([]transport.SoftwarePackage, error) {
@@ -54,7 +98,6 @@ func collectSystemProfiler() ([]transport.SoftwarePackage, error) {
 		return nil, err
 	}
 
-	// Parse JSON from system_profiler - simplified extraction
 	var result map[string]interface{}
 	if err := json.Unmarshal(out, &result); err != nil {
 		return nil, err

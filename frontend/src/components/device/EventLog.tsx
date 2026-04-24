@@ -33,6 +33,8 @@ export default function EventLog({ deviceId, mode = 'system' }: Props) {
             data: response.data,
             total: Number(response.headers['x-total-count'] ?? response.data.length),
           })),
+    refetchOnMount: 'always',
+    refetchInterval: 30_000,
   })
 
   const events = mode === 'agent' ? ((data as Event[] | undefined) ?? []) : ((data as { data: Event[]; total: number } | undefined)?.data ?? [])
